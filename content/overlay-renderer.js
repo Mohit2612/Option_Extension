@@ -86,6 +86,57 @@
     if (activeLayers.lines && (data.levels || data.srLevels || data.keyLevels)) {
       renderSvgOverlay(root, rect, data);
     }
+
+    // 5. Render Floating Candlestick Pattern On-Chart Label
+    if (activeLayers.labels && (data.patternName || data.pattern)) {
+      renderCandlePatternCallout(root, rect, data);
+    }
+  }
+
+  function renderCandlePatternCallout(root, rect, data) {
+    const patternName = data.patternName || data.pattern?.name || 'Candle Pattern';
+    const signal = data.signal || 'WAIT';
+    const isBuy = signal === 'BUY';
+    const isSell = signal === 'SELL';
+
+    const cardClass = isBuy ? 'buy-signal' : isSell ? 'sell-signal' : 'wait-signal';
+    const tagClass = isBuy ? 'buy' : isSell ? 'sell' : 'wait';
+    const arrow = isBuy ? '▲' : isSell ? '▼' : '●';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ts-candle-callout-wrapper';
+
+    const srLocation = data.srLocation || (data.srLevels ? '1M Support/Resistance' : 'Key Level');
+    const levels = data.levels;
+
+    wrapper.innerHTML = `
+      <div class="ts-candle-callout-card ${cardClass}">
+        <div class="ts-candle-head">
+          <div class="ts-candle-title ${tagClass}">
+            <span class="ts-candle-pulse-dot"></span>
+            <span>${arrow} ${patternName.toUpperCase()}</span>
+          </div>
+          <span class="ts-candle-action-tag ${tagClass}">${signal}</span>
+        </div>
+        <div class="ts-candle-body">
+          <div class="ts-candle-confluence-badge">
+            📍 ${srLocation}
+          </div>
+          <div style="font-size:10.5px; color:#94A3B8; margin-bottom:4px;">
+            ${data.action || (isBuy ? 'Confirmed Institutional Buy at Support' : isSell ? 'Confirmed Institutional Sell at Resistance' : 'Pattern Forming (Wait for S/R)')}
+          </div>
+          ${levels ? `
+            <div class="ts-candle-levels">
+              <span>Entry: <strong>${levels.entryPrice}</strong></span>
+              <span style="color:#FF3B69">SL: <strong>${levels.stopLoss}</strong></span>
+              <span style="color:#00E676">TP1: <strong>${levels.target1}</strong></span>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+
+    root.appendChild(wrapper);
   }
 
   function isNiftySymbol(sym) {

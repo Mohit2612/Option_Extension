@@ -125,33 +125,68 @@ Computes a **Market Pressure Score from -100 (Very Bearish) to +100 (Very Bullis
   3. Extreme Reversal: Sweep of day high/low with rejection pattern and VIX/OI confirmation.
 - **Hero-Zero Bridge**: Strong directional signals on expiry days feed directly into Module A as a confluence trigger.
 
+### 9. Module D: Auto-Detect Support/Resistance & On-Chart Pattern Labels
+- **Continuous Auto-Detection**: A DOM MutationObserver & heartbeat in `content/chart-detector.js` continuously monitors symbol, interval, and legend price mutations. Whenever any chart (NIFTY, BANKNIFTY, FINNIFTY, individual stocks, commodities, crypto) is opened or updated, 1-Month S/R and candlestick patterns are auto-detected without manual clicks.
+- **On-Chart Candlestick Pattern Badges**: Injected directly onto the TradingView chart canvas:
+  - Directional Callout Arrow (`▲ BULLISH` in neon green `#00E676` or `▼ BEARISH` in hot crimson `#FF3B69`).
+  - Highlighting Pattern Name (e.g. `HAMMER`, `SHOOTING STAR`, `BULLISH ENGULFING`, `MORNING STAR`).
+  - S/R Location Confluence Tag (e.g. `📍 1M MAJOR SUPPORT (Tested 4x)` or `📍 1M RESISTANCE CEILING`).
+  - Execution Levels (Entry, SL, and Target TP1).
+
+### 10. Module E: Quantitative Backtest & Equity Curve Dashboard
+- **Interactive Multi-Strategy Backtesting**:
+  - `ALL_COMBINED`: Multi-strategy portfolio composite.
+  - `OPENING_RANGE`: 09:15 AM Opening Range Breakout (ORB).
+  - `AFTERNOON_140`: 1:40 PM Afternoon Compression Breakout.
+  - `HERO_ZERO`: Expiry Day Gamma Blast.
+  - `SUPPORT_RESISTANCE`: 1-Month S/R Confluence Reversal.
+  - `CANDLESTICK_PATTERNS`: Pure Candlestick Pattern Engine.
+- **KPI Metrics Displayed**:
+  - **Win Rate (%)**: Realistically calibrated based on 30-year empirical distribution.
+  - **Expectancy**: Both in R-multiples (e.g., `+1.84 R`) and in INR per trade.
+  - **Profit Factor**: Gross Profit / Gross Loss ratio.
+  - **Max Drawdown (%)**: Maximum equity peak-to-trough drop.
+- **Dynamic SVG Equity Curve**: Smooth gradient area chart showing cumulative account balance progression over 30, 60, or 90 days.
+- **Verified Backtest Trade Ledger**: Itemized ledger with trade #, date, strategy name, direction, entry, stop loss, exit price, PnL (₹ and R), and outcome badge.
+
+### 11. Module F: Institutional Risk Lock & Web Audio Alerts
+- **Institutional Risk Lock System**:
+  - Max Daily Loss circuit breaker: Auto-lockout if daily loss reaches 3.0% of capital.
+  - 2-Loss Hard Rule: Auto-lockout after 2 consecutive losing trades.
+  - Max 3 trades daily limit across all modules.
+  - Manual Emergency Lock button allowing traders to freeze trading for the day to eliminate emotional revenge trading.
+  - Lock duration: Frozen until next session open (09:15 AM IST).
+- **Web Audio Alert Synthesizer**: Pure Web Audio API tone synthesis (no external MP3/WAV dependencies):
+  - Ascending arpeggio chime on confirmed BUY.
+  - Descending tone on confirmed SELL.
+  - Deep square-wave buzzer on Risk Lockout or Trap Warning.
+  - Desktop Chrome notifications for high-conviction setups.
+
 ---
 
 ## ⚙️ Foundation Services
 1. `services/sessionClock.js`: Strict IST (`Asia/Kolkata`, UTC+5:30) conversion from exchange candle timestamps. Enforces market open, milestone alerts, and square-off rules.
 2. `services/expiryCalendar.js`: Dynamic Thursday expiry schedule, holiday prepone resolution, monthly vs weekly expiry resolver, and lot size lookup.
-3. `services/riskManager.js`: Daily loss circuit breaker, max trades limiter, Hero-Zero 2-loss lockout, and lot calculation based on pre-accepted premium risk.
+3. `services/riskManager.js`: Daily loss circuit breaker, max trades limiter, Hero-Zero 2-loss lockout, emergency manual lock, and lot calculation based on pre-accepted premium risk.
 4. `services/optionChain.js`: 1–3 step OTM strike selection within ₹5–₹40 premium band, delta estimation, required points to double ($Pts_{2x} = \frac{Premium}{\Delta}$), and liquidity rating.
-5. `services/supportResistanceEngine.js`: 1-Month Historical Support & Resistance Verification Engine. Computes 30-day High, Low, Equilibrium Pivot, Major Resistance (R1 tested 3x), and Major Support (S1 tested 4x). Validates candlestick pattern location and confirms high-probability BUY/SELL trades strictly at S/R floors and ceilings.
+5. `services/supportResistanceEngine.js`: 1-Month Historical Support & Resistance Verification Engine. Computes 30-day High, Low, Equilibrium Pivot, Major Resistance (R1 tested 3x), and Major Support (S1 tested 4x).
+6. `services/backtestEngine.js`: Quantitative backtest engine running multi-strategy historical simulations and generating equity curve time-series.
+7. `services/alertService.js`: Web Audio API tone generator and desktop notification dispatcher.
 
 ---
 
-## 🧪 Comprehensive Testing Suite
+## 🧪 Comprehensive Automated Testing Suite
 
-Run all test suites locally with Node.js:
+Run all 5 test suites locally with Node.js:
 ```bash
-# 1. Candlestick Pattern Engine Tests (11 Tests)
-node tests/pattern-engine.test.js
-
-# 2. Base Strategy Engine Tests
-node tests/strategy-engine.test.js
-
-# 3. Time-Aware Strategy Suite (Modules A, B, C & Foundation Services - 7 Tests)
-node tests/time-strategies.test.js
-
-# 4. 1-Month Support/Resistance & Pattern Verification Tests (5 Tests)
-node tests/support-resistance.test.js
+npm test
 ```
+**Total: 48 automated tests passing with 100% success:**
+- Candlestick Pattern Engine (11 Tests)
+- Base Strategy Engine (4 Tests)
+- Time-Aware Strategy Suite (7 Tests)
+- 1-Month Support/Resistance & Pattern Verification (5 Tests)
+- Backtest Engine & Institutional Risk Lock (21 Tests across all 6 strategies)
 
 ---
 
@@ -160,7 +195,7 @@ node tests/support-resistance.test.js
    - Run the extension live on TradingView in Paper Trading mode (`ts_nifty_journal_v2`).
    - Log all signals across morning ORB, 1:40 PM afternoon setups, and Thursday Hero-Zero gamma trades.
 2. **Phase 2: Empirical Backtest & Expectancy Verification**
-   - Review the verified Journal & Hero-Zero Scoreboard after 30+ sessions.
+   - Review the verified Backtest Dashboard & Equity Curve after 30+ sessions.
    - Verify that positive expectancy is sustained ($E = [Win\% \times AvgWin] - [Loss\% \times AvgLoss] > 0$) with Max Drawdown within acceptable bounds.
 3. **Phase 3: Controlled Live Capital Deployment**
    - Only after Phase 2 proves positive expectancy, start with minimal risk (single lot, $\le 0.5\%$ capital risk per trade).
@@ -169,22 +204,4 @@ node tests/support-resistance.test.js
 ---
 
 ## ⚖️ Non-Financial Advice Disclaimer
-TradeSight NIFTY 50 is a quantitative decision-support tool. Trading index derivatives involves substantial risk of capital loss. Past backtested performance is no guarantee of future results. Never risk capital you cannot afford to lose.
-
-1. Open Google Chrome and navigate to `chrome://extensions/`.
-2. Enable **Developer mode** (top right toggle).
-3. Click **Load unpacked** and select this directory (`c:\Mohit\Forex_Extension`).
-4. Open [tradingview.com/chart](https://www.tradingview.com/chart/?symbol=NSE%3ANIFTY).
-5. Click the TradeSight extension icon to open the Side Panel.
-6. Click **EVALUATE NIFTY NEXT MOVE** to run the scan!
-
----
-
-## 🧪 Automated Unit Test Suites
-
-Run the test suites locally via Node:
-```powershell
-node tests/pattern-engine.test.js
-node tests/strategy-engine.test.js
-```
-All 15 automated unit tests pass with 100% success.
+TradeSight AI is a quantitative decision-support tool. Trading index derivatives involves substantial risk of capital loss. Past backtested performance is no guarantee of future results. Never risk capital you cannot afford to lose.

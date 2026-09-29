@@ -150,5 +150,56 @@
     return null;
   }
 
-  console.info('[TradeSight AI] Chart Detector initialized on TradingView.');
+  // ================= AUTO-DETECTION OBSERVER =================
+  let lastBroadcastSymbol = '';
+  let lastBroadcastPrice = 0;
+  let debounceTimer = null;
+
+  function triggerAutoDetection() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      try {
+        const meta = extractChartMetadata();
+        if (!meta || !meta.currentPrice) return;
+        
+        // Broadcast if symbol changed or price moved meaningfully
+        if (meta.symbol !== lastBroadcastSymbol || Math.abs(meta.currentPrice - lastBroadcastPrice) >= 0.5) {
+          lastBroadcastSymbol = meta.symbol;
+          lastBroadcastPrice = meta.currentPrice;
+
+          chrome.runtime.sendMessage({
+            action: 'CHART_AUTO_DETECTED',
+            payload: meta
+          }).catch(() => {
+            // Extension sidepanel might not be open yet
+          });
+        }
+      } catch (e) {
+        // quiet catch
+      }
+    }, 400);
+  }
+
+  // Setup DOM MutationObserver on header and legend
+  try {
+    const observer = new MutationObserver(() => {
+      triggerAutoDetection();
+    });
+
+    const target = document.querySelector('.chart-container') ||
+      document.querySelector('[data-name="legend-series-item"]') ||
+      document.body;
+
+    if (target) {
+      observer.observe(target, { childList: true, subtree: true, characterData: true });
+    }
+  } catch (err) {
+    console.debug('[TradeSight AI] MutationObserver init:', err);
+  }
+
+  // Initial trigger & lightweight 3-second heartbeat to ensure auto-detect works on chart tabs
+  setTimeout(triggerAutoDetection, 1200);
+  setInterval(triggerAutoDetection, 3000);
+
+  console.info('[TradeSight AI] Chart Detector & Auto-Detect Observer initialized on TradingView.');
 })();

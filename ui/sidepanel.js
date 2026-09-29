@@ -11,6 +11,8 @@ import { SessionClock } from '../services/sessionClock.js';
 import { ExpiryCalendar } from '../services/expiryCalendar.js';
 import { RiskManager } from '../services/riskManager.js';
 import { SupportResistanceEngine } from '../services/supportResistanceEngine.js';
+import { BacktestEngine } from '../services/backtestEngine.js';
+import { AlertService } from '../services/alertService.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -19,6 +21,7 @@ let latestSignal = null;
 let latestDrivers = null;
 let currentChartMeta = null;
 let dailyLossCount = 0;
+let isRiskLocked = false;
 
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', async () => {
@@ -36,6 +39,9 @@ async function initApp() {
   initDriverTab();
   initStrategySettings();
   initJournalAndBacktest();
+  initRiskLockControls();
+  initAudioAlertControls();
+  initAutoDetectListener();
   initSettingsForm();
 
   // Probe TradingView chart
@@ -144,6 +150,13 @@ function initScanControls() {
 }
 
 async function runNiftyScan() {
+  if (isRiskLocked) {
+    AlertService.playLockoutBuzzer();
+    setSystemStatus('Locked Out', 'error');
+    alert('🛡️ RISK LOCK ACTIVE: Trading is locked out for capital protection. Stand aside until next session open (09:15 AM IST).');
+    return;
+  }
+
   const laser = document.getElementById('scanner-laser');
   laser?.classList.add('active');
   setSystemStatus('Scanning Chart...', 'scanning');
@@ -239,6 +252,15 @@ async function runNiftyScan() {
     }
 
     latestSignal = finalSignal;
+
+    // Audible & Desktop Alerts on Actionable Confirmations
+    if (latestSignal.confirmed && latestSignal.signal === 'BUY') {
+      AlertService.playBuyChime();
+      AlertService.sendNotification('CONFIRMED BUY', `${latestSignal.patternName || 'Pattern'} at 1-Month Support! Target: ${latestSignal.levels?.target1}`);
+    } else if (latestSignal.confirmed && latestSignal.signal === 'SELL') {
+      AlertService.playSellChime();
+      AlertService.sendNotification('CONFIRMED SELL', `${latestSignal.patternName || 'Pattern'} at 1-Month Resistance! Target: ${latestSignal.levels?.target1}`);
+    }
 
     // 9. Render Sidepanel UI
     renderNextMoveHero(latestSignal, driverData, detectedPattern, srData, srConfirmation);
@@ -480,104 +502,211 @@ function initStrategySettings() {
   }
 }
 
-/* ================= JOURNAL & BACKTEST ================= */
+/* ================= QUANTITATIVE BACKTEST DASHBOARD ================= */
 function initJournalAndBacktest() {
-  document.getElementById('btn-clear-nifty-journal')?.addEventListener('click', async () => {
-    if (confirm('Clear all journaled Nifty paper trades?')) {
-      await chrome.storage.local.set({ [NiftyJournalEngine.STORAGE_KEY]: [] });
-      refreshJournalDashboard();
-    }
-  });
-
-  document.getElementById('btn-run-backtest')?.addEventListener('click', runBacktestSimulator);
+  document.getElementById('btn-run-backtest')?.addEventListener('click', runQuantitativeBacktest);
+  // Auto-run on load to initialize dashboard with data
+  setTimeout(runQuantitativeBacktest, 400);
 }
 
-async function refreshJournalDashboard() {
-  const analytics = await NiftyJournalEngine.getDashboardAnalytics();
+function runQuantitativeBacktest() {
+  const stratSelect = document.getElementById('bt-strategy-select');
+  const lookbackSelect = document.getElementById('bt-lookback-select');
+  const capitalInput = document.getElementById('bt-capital-input');
+  const riskSelect = document.getElementById('bt-risk-select');
 
-  document.getElementById('dash-winrate').textContent = `${analytics.winRate}%`;
-  document.getElementById('dash-net-r').textContent = `${analytics.cumulativeNetR} R`;
-  document.getElementById('dash-max-dd').textContent = `${analytics.maxDrawdownR} R`;
+  const strategyId = stratSelect ? stratSelect.value : 'ALL_COMBINED';
+  const days = lookbackSelect ? parseInt(lookbackSelect.value, 10) : 30;
+  const capital = capitalInput ? parseFloat(capitalInput.value) : 100000;
+  const riskPct = riskSelect ? parseFloat(riskSelect.value) : 1.0;
+  const symbol = (currentChartMeta?.symbol || 'NIFTY').toUpperCase();
 
-  // Hero-Zero Scoreboard
-  const hz = analytics.heroZeroScoreboard;
-  if (hz) {
-    const tTrades = document.getElementById('hz-total-trades');
-    const tWin = document.getElementById('hz-winrate');
-    const tExp = document.getElementById('hz-expectancy');
-    if (tTrades) tTrades.textContent = hz.totalTrades;
-    if (tWin) tWin.textContent = `${hz.winRate}%`;
-    if (tExp) tExp.textContent = `${hz.expectancy} R`;
+  const results = BacktestEngine.runBacktest({
+    strategyId,
+    days,
+    capital,
+    riskPct,
+    symbol
+  });
+
+  // 1. Update KPI Badges
+  const winRateEl = document.getElementById('bt-winrate');
+  const expEl = document.getElementById('bt-expectancy');
+  const pfEl = document.getElementById('bt-profit-factor');
+  const ddEl = document.getElementById('bt-max-drawdown');
+  const pnlBadge = document.getElementById('bt-net-pnl-badge');
+  const countEl = document.getElementById('bt-trades-count');
+  const capLbl = document.getElementById('bt-final-cap-lbl');
+
+  if (winRateEl) winRateEl.textContent = `${results.winRate}%`;
+  if (expEl) expEl.textContent = `${results.expectancyR > 0 ? '+' : ''}${results.expectancyR} R`;
+  if (pfEl) pfEl.textContent = results.profitFactor;
+  if (ddEl) ddEl.textContent = `-${results.maxDrawdownPct}%`;
+
+  if (pnlBadge) {
+    const isPos = results.netReturnINR >= 0;
+    pnlBadge.textContent = `${isPos ? '+' : ''}₹${results.netReturnINR.toLocaleString('en-IN')} (${isPos ? '+' : ''}${results.netReturnPct}%)`;
+    pnlBadge.style.color = isPos ? '#00E676' : '#FF3B69';
+    pnlBadge.style.borderColor = isPos ? '#00E676' : '#FF3B69';
+    pnlBadge.style.background = isPos ? 'rgba(0,230,118,0.15)' : 'rgba(255,59,105,0.15)';
   }
 
-  const list = document.getElementById('journal-trades-list');
+  if (countEl) countEl.textContent = `${results.totalTrades} Trades (${results.wins}W / ${results.losses}L)`;
+  if (capLbl) capLbl.textContent = `Day ${days} (₹${results.finalCapital.toLocaleString('en-IN')})`;
+
+  // 2. Render SVG Equity Curve Chart
+  renderEquityCurve(results.equityCurve);
+
+  // 3. Render Trade Ledger
+  renderBacktestLedger(results.tradeLedger);
+}
+
+function renderEquityCurve(equityCurve) {
+  const linePath = document.getElementById('equity-line-path');
+  const areaPath = document.getElementById('equity-area-path');
+  if (!linePath || !areaPath || !equityCurve || equityCurve.length < 2) return;
+
+  const width = 400;
+  const height = 160;
+  const paddingX = 10;
+  const paddingTop = 15;
+  const paddingBottom = 15;
+
+  const balances = equityCurve.map((pt) => pt.balance);
+  const minBal = Math.min(...balances) * 0.98;
+  const maxBal = Math.max(...balances) * 1.02;
+  const range = Math.max(100, maxBal - minBal);
+
+  const getX = (i) => paddingX + (i / (equityCurve.length - 1)) * (width - 2 * paddingX);
+  const getY = (bal) => (height - paddingBottom) - ((bal - minBal) / range) * (height - paddingTop - paddingBottom);
+
+  let pathD = '';
+  equityCurve.forEach((pt, i) => {
+    const x = getX(i);
+    const y = getY(pt.balance);
+    if (i === 0) pathD += `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+    else pathD += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+  });
+
+  linePath.setAttribute('d', pathD);
+
+  const lastX = getX(equityCurve.length - 1).toFixed(1);
+  const firstX = getX(0).toFixed(1);
+  const areaD = `${pathD} L ${lastX} ${height} L ${firstX} ${height} Z`;
+  areaPath.setAttribute('d', areaD);
+}
+
+function renderBacktestLedger(tradeLedger) {
+  const list = document.getElementById('backtest-ledger-list');
   if (!list) return;
 
-  if (analytics.recentTrades.length === 0) {
-    list.innerHTML = '<div class="empty-state">No trades logged yet. Click "Log Paper Trade" after generating a signal.</div>';
+  if (!tradeLedger || tradeLedger.length === 0) {
+    list.innerHTML = '<div class="empty-state">No trades generated for this configuration.</div>';
     return;
   }
 
   list.innerHTML = '';
-  analytics.recentTrades.forEach((t) => {
-    const card = document.createElement('div');
-    card.className = 'driver-row';
-    card.style.marginBottom = '6px';
-    card.innerHTML = `
+  tradeLedger.slice(0, 30).forEach((t) => {
+    const item = document.createElement('div');
+    item.className = 'driver-row';
+    item.style.marginBottom = '5px';
+    item.style.padding = '6px 8px';
+
+    const isWin = t.result === 'WIN';
+    const isLoss = t.result === 'LOSS';
+    const tagColor = isWin ? '#00E676' : isLoss ? '#FF3B69' : '#FBBF24';
+    const tagBg = isWin ? 'rgba(0,230,118,0.15)' : isLoss ? 'rgba(255,59,105,0.15)' : 'rgba(251,191,36,0.15)';
+
+    item.innerHTML = `
       <div class="driver-info">
-        <span class="driver-name" style="color:${t.signal === 'BUY' ? '#00E676' : '#FF3B69'}">${t.signal} • ${t.strategyName}</span>
-        <span class="driver-sub">${new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Entry: ${t.entryPrice} | SL: ${t.stopLoss} | TP1: ${t.target1}</span>
+        <span class="driver-name" style="font-size:11px; display:flex; align-items:center; gap:5px;">
+          <strong style="color:${t.direction === 'BUY' ? '#00E676' : '#FF3B69'}">${t.direction}</strong>
+          <span>${t.strategy}</span>
+        </span>
+        <span class="driver-sub" style="font-size:10px;">${t.date} • Entry: ${t.entryPrice} | SL: ${t.stopLoss} | Exit: ${t.exitPrice}</span>
       </div>
-      <div style="display:flex; gap:4px;">
-        <button class="btn-sm" style="color:#00E676" data-id="${t.id}" data-action="WIN">WIN</button>
-        <button class="btn-sm" style="color:#FF3B69" data-id="${t.id}" data-action="LOSS">LOSS</button>
+      <div style="text-align:right;">
+        <span style="display:inline-block; font-size:10px; font-weight:800; color:${tagColor}; background:${tagBg}; border:1px solid ${tagColor}; border-radius:4px; padding:1px 6px;">
+          ${isWin ? '+' : ''}${t.pnlR} R
+        </span>
+        <span style="display:block; font-size:9.5px; color:${tagColor}; font-weight:600; margin-top:2px;">
+          ${t.pnlAmount >= 0 ? '+' : ''}₹${t.pnlAmount.toLocaleString('en-IN')}
+        </span>
       </div>
     `;
-
-    card.querySelectorAll('button').forEach((b) => {
-      b.addEventListener('click', async () => {
-        await NiftyJournalEngine.updateTrade(b.dataset.id, b.dataset.action);
-        refreshJournalDashboard();
-      });
-    });
-
-    list.appendChild(card);
+    list.appendChild(item);
   });
 }
 
-function runBacktestSimulator() {
-  const box = document.getElementById('backtest-results-box');
-  box.classList.remove('hidden');
-  box.innerHTML = 'Running simulation across historical Nifty bars...';
+/* ================= INSTITUTIONAL RISK LOCK CONTROLS ================= */
+function initRiskLockControls() {
+  const engageBtn = document.getElementById('btn-engage-risk-lock');
+  const resetBtn = document.getElementById('btn-reset-risk-lock');
+  const badge = document.getElementById('risk-lock-status-badge');
+  const msg = document.getElementById('risk-lock-message');
 
-  const currentPrice = currentChartMeta?.currentPrice || 24100;
-  const history = generateHistoricalNiftyBars(currentPrice, 60);
+  engageBtn?.addEventListener('click', () => {
+    isRiskLocked = true;
+    if (badge) {
+      badge.textContent = '🔒 LOCKED OUT (Stand Aside)';
+      badge.style.background = 'rgba(255,59,105,0.2)';
+      badge.style.color = '#FF3B69';
+      badge.style.borderColor = '#FF3B69';
+    }
+    if (msg) {
+      msg.innerHTML = '<strong style="color:#FF3B69;">TRADING LOCKED:</strong> Risk limit/discipline lock active. All signals disabled until next market open (09:15 AM IST).';
+    }
+    AlertService.playLockoutBuzzer();
+    AlertService.sendNotification('RISK LOCK ENGAGED', 'Trading is locked out to protect capital. Stand aside.');
+  });
 
-  const res = NiftyJournalEngine.runHistoricalBacktest(history, appConfig);
-  if (res.error) {
-    box.textContent = res.error;
-    return;
-  }
-
-  let moduleList = '';
-  if (res.moduleBreakdown) {
-    moduleList = Object.entries(res.moduleBreakdown)
-      .map(([name, stat]) => `• ${name}: ${stat.count} signals (Wins: ${stat.wins} | Losses: ${stat.losses})`)
-      .join('<br>');
-  }
-
-  box.innerHTML = `
-    <strong>Historical Multi-Module Backtest (60 Bars):</strong><br>
-    • Total Signals Generated: <strong>${res.totalSignals}</strong><br>
-    • Completed Setups: <strong>${res.completed}</strong> (Wins: ${res.wins} | Losses: ${res.losses})<br>
-    • Verified Win Rate: <strong class="text-emerald">${res.winRate}%</strong><br>
-    • Profit Factor: <strong class="text-cyan">${res.profitFactor}</strong><br>
-    • Net Cumulative Expectancy: <strong>+${res.netR} R</strong><br>
-    • Max Drawdown: <strong class="text-crimson">${res.maxDrawdownR} R</strong><br>
-    ${moduleList ? `<div style="margin-top:6px; font-size:10.5px; color:#CBD5E1;">${moduleList}</div>` : ''}
-    <div style="margin-top:6px; font-size:10px; color:#FBBF24;">${res.heroZeroNote || ''}</div>
-  `;
+  resetBtn?.addEventListener('click', () => {
+    isRiskLocked = false;
+    dailyLossCount = 0;
+    if (badge) {
+      badge.textContent = 'ACTIVE (UNLOCKED)';
+      badge.style.background = 'rgba(0,230,118,0.15)';
+      badge.style.color = '#00E676';
+      badge.style.borderColor = '#00E676';
+    }
+    if (msg) {
+      msg.textContent = 'Enforces strict capital protection: 2 consecutive losses or -3% daily loss triggers automatic trading lockout until 09:15 IST next session.';
+    }
+  });
 }
+
+/* ================= AUDIBLE ALERTS CONTROLS ================= */
+function initAudioAlertControls() {
+  const soundBtn = document.getElementById('btn-toggle-sound');
+  soundBtn?.addEventListener('click', () => {
+    const isEnabled = !AlertService.isSoundEnabled();
+    AlertService.setSoundEnabled(isEnabled);
+    soundBtn.textContent = isEnabled ? '🔔 Audio: ON' : '🔕 Audio: OFF';
+    soundBtn.style.color = isEnabled ? '#00D4FF' : '#94A3B8';
+    soundBtn.style.borderColor = isEnabled ? 'rgba(0,212,255,0.3)' : 'rgba(148,163,184,0.3)';
+    if (isEnabled) AlertService.playBuyChime();
+  });
+}
+
+/* ================= AUTO-DETECT LISTENER ================= */
+let autoDetectDebounce = null;
+function initAutoDetectListener() {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'CHART_AUTO_DETECTED' && request.payload) {
+      currentChartMeta = request.payload;
+      updateChartMetaDisplay(currentChartMeta);
+
+      // Auto-detect S/R & pattern without requiring button clicks
+      if (!isRiskLocked) {
+        clearTimeout(autoDetectDebounce);
+        autoDetectDebounce = setTimeout(() => {
+          runNiftyScan();
+        }, 300);
+      }
+    }
+  });
+}
+
 
 /* ================= SETTINGS ================= */
 function initSettingsForm() {

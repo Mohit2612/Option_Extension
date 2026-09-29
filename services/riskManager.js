@@ -76,6 +76,39 @@ export const RiskManager = {
   },
 
   /**
+   * Check current active lockout status
+   * @param {Object} dailyState
+   * @returns {Object} { isLocked, lockType, reason, unlockTimeFormatted }
+   */
+  getLockoutStatus(dailyState = {}) {
+    if (dailyState.isLocked) {
+      return {
+        isLocked: true,
+        lockType: dailyState.lockType || 'MANUAL_LOCK',
+        reason: dailyState.lockReason || 'Trading locked for discipline.',
+        unlockTimeFormatted: '09:15 AM IST (Next Session)'
+      };
+    }
+    return { isLocked: false, lockType: null, reason: null };
+  },
+
+  /**
+   * Engage manual or automated emergency risk lock
+   * @param {string} reason
+   * @param {string} lockType
+   * @returns {Object} Updated lock state
+   */
+  engageLock(reason = 'Manual discipline lock engaged by trader.', lockType = 'MANUAL_DISCIPLINE_LOCK') {
+    return {
+      isLocked: true,
+      lockType,
+      lockReason: reason,
+      lockedAt: Date.now(),
+      unlockAtNextSession: true
+    };
+  },
+
+  /**
    * Calculates lot sizing based on strict pre-accepted premium risk
    * @param {Object} params - { capital, riskPct, premiumPerShare, lotSize, isHeroZero }
    * @returns {Object} { allowed, lots, totalShares, maxLossAmount, warning }

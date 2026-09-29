@@ -317,3 +317,163 @@
   align-items: center;
   gap: 4px;
 }
+
+/* ================= CANDLESTICK PATTERN ON-CHART LABELS ================= */
+.ts-candle-callout-wrapper {
+  position: absolute;
+  right: 85px;
+  bottom: 80px;
+  z-index: 280;
+  pointer-events: auto !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  animation: slideInCallout 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInCallout {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ts-candle-callout-card {
+  background: rgba(9, 13, 22, 0.96);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 260px;
+  max-width: 340px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 20px rgba(0, 212, 255, 0.18);
+  border: 1.5px solid rgba(0, 212, 255, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.ts-candle-callout-card.buy-signal {
+  border-color: #00E676;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 22px rgba(0, 230, 118, 0.28);
+}
+
+.ts-candle-callout-card.sell-signal {
+  border-color: #FF3B69;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 22px rgba(255, 59, 105, 0.28);
+}
+
+.ts-candle-callout-card.wait-signal {
+  border-color: #FBBF24;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 20px rgba(251, 191, 36, 0.18);
+}
+
+.ts-candle-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 5px;
+}
+
+.ts-candle-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.ts-candle-title.buy { color: #00E676; }
+.ts-candle-title.sell { color: #FF3B69; }
+.ts-candle-title.wait { color: #FBBF24; }
+
+.ts-candle-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.buy .ts-candle-pulse-dot {
+  background: #00E676;
+  box-shadow: 0 0 8px #00E676;
+  animation: pulse-green 1.5s infinite;
+}
+
+.sell .ts-candle-pulse-dot {
+  background: #FF3B69;
+  box-shadow: 0 0 8px #FF3B69;
+  animation: pulse-red 1.5s infinite;
+}
+
+.wait .ts-candle-pulse-dot {
+  background: #FBBF24;
+  box-shadow: 0 0 8px #FBBF24;
+}
+
+@keyframes pulse-green {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+@keyframes pulse-red {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.ts-candle-action-tag {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.ts-candle-action-tag.buy {
+  background: rgba(0, 230, 118, 0.2);
+  color: #00E676;
+  border: 1px solid #00E676;
+}
+
+.ts-candle-action-tag.sell {
+  background: rgba(255, 59, 105, 0.2);
+  color: #FF3B69;
+  border: 1px solid #FF3B69;
+}
+
+.ts-candle-action-tag.wait {
+  background: rgba(251, 191, 36, 0.15);
+  color: #FBBF24;
+  border: 1px solid #FBBF24;
+}
+
+.ts-candle-body {
+  font-size: 11px;
+  color: #CBD5E1;
+  line-height: 1.45;
+}
+
+.ts-candle-confluence-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #00D4FF;
+  background: rgba(0, 212, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  margin-bottom: 5px;
+}
+
+.ts-candle-levels {
+  display: flex;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 10.5px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 7px;
+  border-radius: 4px;
+}
