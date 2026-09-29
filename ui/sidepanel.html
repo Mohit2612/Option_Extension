@@ -90,6 +90,16 @@
           </div>
         </div>
 
+        <!-- MODULE 5: POST-LOSS COOL-DOWN BANNER -->
+        <div id="cooldown-timer-banner" style="display:none; background:rgba(255,59,105,0.12); border:1px solid #FF3B69; border-radius:6px; padding:7px 10px; margin-bottom:10px;">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:14px;">🛑</span>
+            <span id="cooldown-timer-text" style="font-size:10.5px; font-weight:700; color:#FF8BA7; line-height:1.35;">
+              COOL-DOWN ACTIVE: Signals paused after a loss to restore emotional composure.
+            </span>
+          </div>
+        </div>
+
         <!-- Discipline and Loss-Protection Layer -->
         <div class="card-section discipline-protection-card" id="discipline-protection-card" style="border:1.5px solid rgba(0, 212, 255, 0.35); background:linear-gradient(180deg, rgba(11,15,25,0.95) 0%, rgba(15,23,42,0.95) 100%); border-radius:10px; padding:10px 12px; margin-bottom:12px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
           
@@ -244,6 +254,54 @@
           <!-- Factor Breakdown Container (Expandable) -->
           <div id="tq-breakdown-container" style="display:none; flex-direction:column; gap:6px; margin-top:4px;">
             <!-- Populated dynamically via sidepanel.js -->
+          </div>
+        </div>
+
+        <!-- MODULE 6: PRE-TRADE CHECKLIST (MANDATORY GATE) -->
+        <div class="card-section pre-trade-checklist-card" id="pre-trade-checklist-card" style="border: 1px solid rgba(0, 212, 255, 0.35); background: rgba(0, 212, 255, 0.04); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:12px; font-weight:800; color:#00D4FF;">📋 PRE-TRADE CHECKLIST</span>
+            </div>
+            <span id="checklist-status-badge" style="font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(251,191,36,0.15); color:#FBBF24; border:1px solid #FBBF24;">
+              7/8 PASSED
+            </span>
+          </div>
+
+          <div id="checklist-summary-msg" style="font-size:10px; color:#CBD5E1; margin-bottom:8px; line-height:1.4;">
+            All 8 criteria must pass before an execution signal is authorized.
+          </div>
+
+          <!-- Checklist Items Container -->
+          <div id="checklist-items-container" style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;">
+            <!-- Populated via disciplinePanel.js -->
+          </div>
+        </div>
+
+        <!-- MODULE 7: POSITION SIZING & RISK CALCULATOR -->
+        <div class="card-section position-sizing-card" id="position-sizing-card" style="border: 1px solid rgba(0, 230, 118, 0.35); background: rgba(0, 230, 118, 0.04); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:12px; font-weight:800; color:#00E676;">📐 POSITION SIZING & RISK</span>
+            <span style="font-size:9.5px; color:#94A3B8;">Floor Rounding Active</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:5px; margin-bottom:6px; text-align:center;">
+            <div style="background:rgba(255,255,255,0.03); padding:4px 2px; border-radius:4px;">
+              <span style="display:block; font-size:9px; color:#94A3B8;">CALCULATED SIZE</span>
+              <span id="ps-recommended-lots" style="font-size:11px; font-weight:800; color:#00E676;">2 Lots (50 Qty)</span>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:4px 2px; border-radius:4px;">
+              <span style="display:block; font-size:9px; color:#94A3B8;">MAX RISK (₹)</span>
+              <span id="ps-planned-risk-inr" style="font-size:11px; font-weight:800; color:#FF3B69;">₹1,750</span>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:4px 2px; border-radius:4px;">
+              <span style="display:block; font-size:9px; color:#94A3B8;">% OF CAPITAL</span>
+              <span id="ps-planned-risk-pct" style="font-size:11px; font-weight:800; color:#FBBF24;">0.88%</span>
+            </div>
+          </div>
+
+          <div id="ps-recommendation-text" style="font-size:10px; color:#CBD5E1; line-height:1.4;">
+            Position size sized strictly within 1.0% capital risk limit.
           </div>
         </div>
 
@@ -674,8 +732,71 @@
             <span>Verified Backtest Trade Ledger</span>
             <span id="bt-trades-count" style="font-size:10px; color:#94A3B8;">0 Completed Trades</span>
           </div>
-          <div id="backtest-ledger-list" class="journal-entries-list" style="max-height:220px; overflow-y:auto;">
+          <div id="backtest-ledger-list" class="journal-entries-list" style="max-height:220px; overflow-y:auto; margin-bottom:10px;">
             <!-- Populated dynamically -->
+          </div>
+
+          <!-- CSV Export Button -->
+          <button id="btn-export-journal-csv" class="btn-sm" style="width:100%; background:#1E293B; border:1px solid #475569; color:#00D4FF; font-weight:700; padding:6px; border-radius:5px; font-size:11px; cursor:pointer;">
+            📥 Export Trading Journal to CSV
+          </button>
+        </div>
+
+        <!-- MODULE 8: RULE-FOLLOWED VS RULE-BROKEN COMPARISON -->
+        <div class="card-section" style="border:1px solid rgba(0, 212, 255, 0.3); background:rgba(0, 212, 255, 0.03); border-radius:8px; padding:10px; margin-top:12px;">
+          <div style="font-size:11px; font-weight:800; color:#00D4FF; margin-bottom:6px;">
+            ⚖️ RULE-FOLLOWED VS RULE-BROKEN P&L COMPARISON
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px;">
+            <div style="background:rgba(0,230,118,0.08); border:1px solid rgba(0,230,118,0.25); border-radius:5px; padding:6px; text-align:center;">
+              <span style="font-size:9.5px; color:#94A3B8; display:block;">RULES FOLLOWED</span>
+              <span id="cmp-followed-r" style="font-size:13px; font-weight:800; color:#00E676;">+32.4 R</span>
+              <span id="cmp-followed-wr" style="font-size:9.5px; color:#CBD5E1; display:block;">64% Win Rate (78 Trades)</span>
+            </div>
+            <div style="background:rgba(255,59,105,0.08); border:1px solid rgba(255,59,105,0.25); border-radius:5px; padding:6px; text-align:center;">
+              <span style="font-size:9.5px; color:#94A3B8; display:block;">RULES BROKEN / TILT</span>
+              <span id="cmp-broken-r" style="font-size:13px; font-weight:800; color:#FF3B69;">-14.8 R</span>
+              <span id="cmp-broken-wr" style="font-size:9.5px; color:#CBD5E1; display:block;">31% Win Rate (23 Trades)</span>
+            </div>
+          </div>
+          <div id="cmp-edge-delta" style="font-size:10px; color:#CBD5E1; line-height:1.4;">
+            Discipline Edge: Following rules generated an empirical advantage of <strong>+47.2 R</strong> over emotional/impulsive trades.
+          </div>
+        </div>
+
+        <!-- MODULE 8: USER-SPECIFIC EDGE INSIGHTS -->
+        <div class="card-section" style="border:1px solid rgba(168, 85, 247, 0.3); background:rgba(168, 85, 247, 0.04); border-radius:8px; padding:10px; margin-top:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:11px; font-weight:800; color:#C084FC;">🧠 USER-SPECIFIC EDGE INSIGHTS</span>
+            <span id="insights-sample-badge" style="font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; background:#334155; color:#94A3B8;">
+              30+ Trades Required
+            </span>
+          </div>
+          <div id="insights-recommendation-text" style="font-size:10px; color:#CBD5E1; line-height:1.45;">
+            Initial data analysis active. Log 30+ completed trades in this extension to unlock personalized edge recommendations.
+          </div>
+        </div>
+
+        <!-- MODULE 8: AUTO WEEKLY REVIEW REPORT -->
+        <div class="card-section" style="border:1px solid rgba(251, 191, 36, 0.3); background:rgba(251, 191, 36, 0.03); border-radius:8px; padding:10px; margin-top:12px;">
+          <div style="font-size:11px; font-weight:800; color:#FBBF24; margin-bottom:6px;">
+            📑 WEEKLY BEHAVIORAL REVIEW REPORT
+          </div>
+          <div style="margin-bottom:6px;">
+            <span style="font-size:9.5px; font-weight:700; color:#00E676;">✓ TOP 3 THINGS DONE RIGHT:</span>
+            <ul id="weekly-review-strengths" style="margin:2px 0 0 16px; padding:0; font-size:9.5px; color:#CBD5E1; line-height:1.4;">
+              <li>Strictly adhered to 1:2 R:R threshold on all verified setups.</li>
+              <li>Honored daily loss stop lock without revenge trading.</li>
+              <li>Achieved highest win rate during 09:20-11:30 Prime Window.</li>
+            </ul>
+          </div>
+          <div>
+            <span style="font-size:9.5px; font-weight:700; color:#FF3B69;">⚠️ TOP 3 MISTAKES TO ELIMINATE:</span>
+            <ul id="weekly-review-mistakes" style="margin:2px 0 0 16px; padding:0; font-size:9.5px; color:#CBD5E1; line-height:1.4;">
+              <li>Avoid taking midday chop trades between 11:30 and 13:30.</li>
+              <li>Wait for full 20-minute cool-down after a loss before re-evaluating.</li>
+              <li>Always complete pre-trade checklist before entering order.</li>
+            </ul>
           </div>
         </div>
       </section>
@@ -688,6 +809,29 @@
         </div>
 
         <div class="settings-form">
+          <!-- Risk Profile Preset Selector -->
+          <div class="form-row" style="margin-bottom:10px;">
+            <label for="cfg-risk-preset-select" style="font-weight:700; color:#00D4FF;">Risk Discipline Preset Profile</label>
+            <select id="cfg-risk-preset-select" style="width:100%; background:#0B0F19; color:#00D4FF; border:1px solid rgba(0,212,255,0.4); border-radius:6px; padding:6px 8px; font-size:11px; font-weight:700;">
+              <option value="BALANCED" selected>⚖️ Balanced (1.0% Risk • +2.0R Target • -2.0R Loss • 3 Trades)</option>
+              <option value="CONSERVATIVE">🛡️ Conservative (0.5% Risk • +1.5R Target • -1.5R Loss • 2 Trades)</option>
+              <option value="CUSTOM">⚙️ Custom Parameters</option>
+            </select>
+            <span class="field-hint">Pre-configures mathematical capital protection limits based on your experience level.</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-cooldown-mins">Post-Loss Cool-Down (Minutes)</label>
+            <input type="number" id="cfg-cooldown-mins" value="20" min="5" max="60">
+            <span class="field-hint">Blocks new execution signals for N minutes after a loss to prevent tilt & revenge trading.</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-capital-inr">Trading Capital (₹)</label>
+            <input type="number" id="cfg-capital-inr" value="200000" step="25000">
+            <span class="field-hint">Total deployed account equity used for position sizing & risk per trade.</span>
+          </div>
+
           <div class="form-row">
             <label for="cfg-lot-size">Nifty Lot Size</label>
             <input type="number" id="cfg-lot-size" value="25" step="25">
