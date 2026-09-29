@@ -97,7 +97,75 @@ Computes a **Market Pressure Score from -100 (Very Bearish) to +100 (Very Bullis
 
 ---
 
-## 🚀 Installation & Testing
+### 6. Module A: Hero-Zero (Expiry-Day Gamma) Engine
+- **Concept**: High-payoff, low-probability expiry day directional bet. Treated mathematically as a fixed, pre-accepted loss.
+- **Activation Conditions**:
+  1. Today is confirmed Nifty Expiry Day (dynamic check via `ExpiryCalendar`).
+  2. Time window: 13:45 - 14:45 IST (peak gamma and institutional unwinding).
+  3. Regime is NOT "Range/Chop". Must be directional momentum or breakout.
+  4. At least 3 confluences: Day H/L breakout, momentum candle, VWAP hold, VIX confirmation, OI unwinding, heavyweight confirmation.
+- **Strike Selection**: Premium range ₹5 to ₹40; prefers 1-3 strikes OTM with bid-ask liquidity; delta estimation; displays exact index points needed to double premium ($Pts_{2x} = Premium / Delta$).
+- **Mandatory Risk Rules**: Max 0.5%–1% capital risk per trade; hard stop at 50% of premium or index trigger candle; partial profit taking at 2x premium; 15:15 IST time exit; hard lockout after 2 failed Hero-Zero trades.
+- **Scoreboard**: Dedicated Hero-Zero scorecard in Journal tracking win rate, average win vs loss, and net expectancy with mandatory reality check banner.
+
+### 7. Module B: 09:15 AM / First 15-Minute Candle Strategy
+- **Opening Structure**: Synthesizes 09:15 - 09:30 IST candle. Analyzes gap classification (Gap & Go, Gap Fill, Gap Trap), body/wick ratios, and compression/exhaustion filters.
+- **09:30 IST Sharp Day Plan**: Outputs directional bias, Key Levels (ORH, ORL, Midpoint, PDH, PDL, VWAP), and trigger conditions.
+- **Sub-Setups**:
+  1. Opening Range Breakout (ORB): 5m candle close beyond 15m range (not a wick). Stop Loss at Midpoint or Opposite range; Targets at 1x and 2x range.
+  2. Failed-Breakout Reversal (Trap): 1-2 candle false break outside ORB closing back inside.
+  3. Gap-Fill Setup: Rejection candle at opening extreme into previous day close.
+- **Trade Management**: Move SL to cost after 1x range target; 45-minute time stop.
+
+### 8. Module C: 1:40 PM Afternoon Strategy (Experimental)
+- **Concept**: Captures the institutional positioning and post-lunch volume expansion between 13:40 - 14:30 IST.
+- **Scenarios**:
+  1. Compression Breakout: Tight consolidation between 12:00 - 13:40 (< ATR/points threshold) breaking out with volume.
+  2. VWAP Trend Continuation: Pullback to VWAP/EMA in lunch phase followed by momentum confirmation.
+  3. Extreme Reversal: Sweep of day high/low with rejection pattern and VIX/OI confirmation.
+- **Hero-Zero Bridge**: Strong directional signals on expiry days feed directly into Module A as a confluence trigger.
+
+---
+
+## ⚙️ Foundation Services
+1. `services/sessionClock.js`: Strict IST (`Asia/Kolkata`, UTC+5:30) conversion from exchange candle timestamps. Enforces market open, milestone alerts, and square-off rules.
+2. `services/expiryCalendar.js`: Dynamic Thursday expiry schedule, holiday prepone resolution, monthly vs weekly expiry resolver, and lot size lookup.
+3. `services/riskManager.js`: Daily loss circuit breaker, max trades limiter, Hero-Zero 2-loss lockout, and lot calculation based on pre-accepted premium risk.
+4. `services/optionChain.js`: 1–3 step OTM strike selection within ₹5–₹40 premium band, delta estimation, required points to double ($Pts_{2x} = \frac{Premium}{\Delta}$), and liquidity rating.
+
+---
+
+## 🧪 Comprehensive Testing Suite
+
+Run all test suites locally with Node.js:
+```bash
+# 1. Candlestick Pattern Engine Tests (11 Tests)
+node tests/pattern-engine.test.js
+
+# 2. Base Strategy Engine Tests
+node tests/strategy-engine.test.js
+
+# 3. Time-Aware Strategy Suite (Modules A, B, C & Foundation Services - 7 Tests)
+node tests/time-strategies.test.js
+```
+
+---
+
+## 🛡️ 3-Phase Testing & Execution Plan
+1. **Phase 1: Paper Trading (Minimum 30 Sessions)**
+   - Run the extension live on TradingView in Paper Trading mode (`ts_nifty_journal_v2`).
+   - Log all signals across morning ORB, 1:40 PM afternoon setups, and Thursday Hero-Zero gamma trades.
+2. **Phase 2: Empirical Backtest & Expectancy Verification**
+   - Review the verified Journal & Hero-Zero Scoreboard after 30+ sessions.
+   - Verify that positive expectancy is sustained ($E = [Win\% \times AvgWin] - [Loss\% \times AvgLoss] > 0$) with Max Drawdown within acceptable bounds.
+3. **Phase 3: Controlled Live Capital Deployment**
+   - Only after Phase 2 proves positive expectancy, start with minimal risk (single lot, $\le 0.5\%$ capital risk per trade).
+   - Strict stop for the day upon 2 consecutive losses or daily loss limit breach.
+
+---
+
+## ⚖️ Non-Financial Advice Disclaimer
+TradeSight NIFTY 50 is a quantitative decision-support tool. Trading index derivatives involves substantial risk of capital loss. Past backtested performance is no guarantee of future results. Never risk capital you cannot afford to lose.
 
 1. Open Google Chrome and navigate to `chrome://extensions/`.
 2. Enable **Developer mode** (top right toggle).

@@ -7,6 +7,9 @@ import { PatternEngine } from '../patterns/pattern-engine.js';
 import { DriverEngine } from '../drivers/driver-engine.js';
 import { StrategyEngine } from '../strategies/strategy-engine.js';
 import { NiftyJournalEngine } from '../journal/nifty-journal.js';
+import { SessionClock } from '../services/sessionClock.js';
+import { ExpiryCalendar } from '../services/expiryCalendar.js';
+import { RiskManager } from '../services/riskManager.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -39,6 +42,9 @@ async function initApp() {
 
   // Load verified journal analytics
   refreshJournalDashboard();
+
+  // Update session & countdown badges
+  updateSessionBadges();
 }
 
 async function loadUserConfig() {
@@ -48,7 +54,15 @@ async function loadUserConfig() {
         lotSize: res.ts_nifty_lot_size || NIFTY_CONFIG.symbol.defaultLotSize,
         riskPct: res.ts_nifty_risk_pct || NIFTY_CONFIG.risk.maxCapitalRiskPerTradePct,
         apiKey: res.ts_gemini_api_key || '',
-        strategies: res.ts_nifty_strategies || NIFTY_CONFIG.strategies
+        strategies: res.ts_nifty_strategies || NIFTY_CONFIG.strategies,
+        maxTradesPerModule: res.ts_max_trades_module || 2,
+        maxDailyTrades: res.ts_max_daily_trades || 3,
+        maxDailyLoss: res.ts_max_daily_loss || 3000,
+        heroMinPremium: res.ts_hero_min_premium || 5,
+        heroMaxPremium: res.ts_hero_max_premium || 40,
+        heroRiskPct: res.ts_hero_risk_pct || 0.75,
+        orbSlMode: res.ts_orb_sl_mode || 'midpoint',
+        afternoonCompPts: res.ts_afternoon_comp_pts || 35
       };
       resolve(appConfig);
     });
@@ -195,7 +209,10 @@ async function runNiftyScan() {
     renderNextMoveHero(latestSignal, driverData, detectedPattern);
 
     // 8. Auto-Draw on TradingView Overlay
-    dispatchOverlayToChart(latestSignal, driverData);
+    dispatchOverlayToChart(latestSignal, driverData, keyLevels);
+
+    // 9. Update time and hero-zero badges
+    updateSessionBadges(latestSignal);
 
     setSystemStatus('Ready', 'ready');
   } catch (err) {
@@ -203,6 +220,38 @@ async function runNiftyScan() {
     setSystemStatus('Error', 'error');
   } finally {
     laser?.classList.remove('active');
+  }
+}
+
+function updateSessionBadges(signalData = null) {
+  const badge = document.getElementById('hero-zero-status-badge');
+  const pill = document.getElementById('hero-countdown-pill');
+  if (!badge && !pill) return;
+
+  const now = new Date();
+  const isExp = ExpiryCalendar.isExpiryDay(now);
+  const inWindow = SessionClock.isInsideHeroZeroWindow(now);
+  const lockStatus = RiskManager.isHeroZeroLocked();
+
+  if (badge) {
+    if (lockStatus.locked) {
+      badge.className = 'hero-zero-badge locked';
+      badge.textContent = '🔒 HZ Locked (2-Loss)';
+    } else if (isExp && inWindow) {
+      badge.className = 'hero-zero-badge armed';
+      badge.textContent = '⚡ Hero-Zero Armed';
+    } else if (isExp) {
+      badge.className = 'hero-zero-badge standby';
+      badge.textContent = '⏳ Expiry Active (Window 13:45)';
+    } else {
+      badge.className = 'hero-zero-badge standby';
+      badge.textContent = '⏳ HZ Standby (Thurs Expiry)';
+    }
+  }
+
+  if (pill) {
+    const cd = SessionClock.getCountdownToNextWindow(now);
+    pill.textContent = `⏱️ ${cd.label} (${cd.remainingFormatted})`;
   }
 }
 
@@ -283,8 +332,14 @@ function renderNextMoveHero(signalData, driverData, pattern) {
   }
 }
 
-async function dispatchOverlayToChart(signalData, driverData) {
+async function dispatchOverlayToChart(signalData, driverData, keyLevels = {}) {
   try {
+    const now = new Date();
+    const isExp = ExpiryCalendar.isExpiryDay(now);
+    const inWindow = SessionClock.isInsideHeroZeroWindow(now);
+    const lockStatus = RiskManager.isHeroZeroLocked();
+    const cd = SessionClock.getCountdownToNextWindow(now);
+
     await chrome.runtime.sendMessage({
       action: 'FORWARD_TO_ACTIVE_TAB',
       payload: {
@@ -297,8 +352,17 @@ async function dispatchOverlayToChart(signalData, driverData) {
           pressureScore: driverData?.pressureScore || 0,
           vixSummary: driverData?.vixAnalysis?.details || '',
           levels: signalData.levels,
+          keyLevels: keyLevels,
           invalidation: signalData.invalidation,
           regime: signalData.regime,
+          heroZeroStatus: {
+            armed: isExp && inWindow && !lockStatus.locked,
+            locked: lockStatus.locked,
+            text: lockStatus.locked ? 'Locked' : (isExp && inWindow ? 'Armed' : 'Standby')
+          },
+          countdown: {
+            label: `${cd.label} (${cd.remainingFormatted})`
+          },
           timestamp: Date.now()
         }
       }
@@ -318,7 +382,6 @@ async function renderDriversTab() {
   const drivers = latestDrivers || (await DriverEngine.getMarketPressure(currentPrice));
   latestDrivers = drivers;
 
-  // VIX card
   const vix = drivers.vixAnalysis;
   if (vix) {
     const levelMatch = vix.details.match(/Level:\s*([0-9.]+)/);
@@ -328,7 +391,6 @@ async function renderDriversTab() {
     document.getElementById('vix-card-rationale').textContent = vix.rationale;
   }
 
-  // All Drivers Table
   const table = document.getElementById('all-drivers-table');
   if (table && drivers.drivers) {
     table.innerHTML = '';
@@ -351,7 +413,11 @@ async function renderDriversTab() {
 
 /* ================= STRATEGY SETTINGS ================= */
 function initStrategySettings() {
-  const stratKeys = ['orb', 'vwap', 'ema', 'sweep', 'retest', 'gap', 'expiry'];
+  const stratKeys = [
+    'hero-zero', 'opening-range', 'afternoon-140',
+    'vwap', 'ema', 'sweep', 'retest'
+  ];
+
   stratKeys.forEach((key) => {
     const el = document.getElementById(`cfg-strat-${key}`);
     if (el) {
@@ -362,6 +428,23 @@ function initStrategySettings() {
       });
     }
   });
+
+  // Module B suboptions
+  ['cfg-orb-sub-breakout', 'cfg-orb-sub-failed', 'cfg-orb-sub-gapfill'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', () => {
+        chrome.storage.local.set({ [id]: el.checked });
+      });
+    }
+  });
+
+  const orbSl = document.getElementById('cfg-orb-sl-mode');
+  if (orbSl) {
+    orbSl.addEventListener('change', () => {
+      chrome.storage.local.set({ ts_orb_sl_mode: orbSl.value });
+    });
+  }
 }
 
 /* ================= JOURNAL & BACKTEST ================= */
@@ -382,6 +465,17 @@ async function refreshJournalDashboard() {
   document.getElementById('dash-winrate').textContent = `${analytics.winRate}%`;
   document.getElementById('dash-net-r').textContent = `${analytics.cumulativeNetR} R`;
   document.getElementById('dash-max-dd').textContent = `${analytics.maxDrawdownR} R`;
+
+  // Hero-Zero Scoreboard
+  const hz = analytics.heroZeroScoreboard;
+  if (hz) {
+    const tTrades = document.getElementById('hz-total-trades');
+    const tWin = document.getElementById('hz-winrate');
+    const tExp = document.getElementById('hz-expectancy');
+    if (tTrades) tTrades.textContent = hz.totalTrades;
+    if (tWin) tWin.textContent = `${hz.winRate}%`;
+    if (tExp) tExp.textContent = `${hz.expectancy} R`;
+  }
 
   const list = document.getElementById('journal-trades-list');
   if (!list) return;
@@ -423,7 +517,6 @@ function runBacktestSimulator() {
   box.classList.remove('hidden');
   box.innerHTML = 'Running simulation across historical Nifty bars...';
 
-  // Generate 60 historical bars for test
   const currentPrice = currentChartMeta?.currentPrice || 24100;
   const history = generateHistoricalNiftyBars(currentPrice, 60);
 
@@ -433,13 +526,23 @@ function runBacktestSimulator() {
     return;
   }
 
+  let moduleList = '';
+  if (res.moduleBreakdown) {
+    moduleList = Object.entries(res.moduleBreakdown)
+      .map(([name, stat]) => `• ${name}: ${stat.count} signals (Wins: ${stat.wins} | Losses: ${stat.losses})`)
+      .join('<br>');
+  }
+
   box.innerHTML = `
-    <strong>Historical Simulation Results (60 Bars):</strong><br>
+    <strong>Historical Multi-Module Backtest (60 Bars):</strong><br>
     • Total Signals Generated: <strong>${res.totalSignals}</strong><br>
     • Completed Setups: <strong>${res.completed}</strong> (Wins: ${res.wins} | Losses: ${res.losses})<br>
     • Verified Win Rate: <strong class="text-emerald">${res.winRate}%</strong><br>
     • Profit Factor: <strong class="text-cyan">${res.profitFactor}</strong><br>
-    • Net Cumulative Expectancy: <strong>+${res.netR} R</strong>
+    • Net Cumulative Expectancy: <strong>+${res.netR} R</strong><br>
+    • Max Drawdown: <strong class="text-crimson">${res.maxDrawdownR} R</strong><br>
+    ${moduleList ? `<div style="margin-top:6px; font-size:10.5px; color:#CBD5E1;">${moduleList}</div>` : ''}
+    <div style="margin-top:6px; font-size:10px; color:#FBBF24;">${res.heroZeroNote || ''}</div>
   `;
 }
 
@@ -447,24 +550,51 @@ function runBacktestSimulator() {
 function initSettingsForm() {
   const lotInput = document.getElementById('cfg-lot-size');
   const riskInput = document.getElementById('cfg-risk-pct');
+  const maxModInput = document.getElementById('cfg-max-trades-module');
+  const maxDayInput = document.getElementById('cfg-max-daily-trades');
+  const maxLossInput = document.getElementById('cfg-max-daily-loss');
   const keyInput = document.getElementById('cfg-api-key');
+
+  const heroMin = document.getElementById('cfg-hero-min-premium');
+  const heroMax = document.getElementById('cfg-hero-max-premium');
+  const heroRisk = document.getElementById('cfg-hero-risk-pct');
+  const compPts = document.getElementById('cfg-afternoon-comp-pts');
+
   const saveBtn = document.getElementById('btn-save-settings');
   const toggleKey = document.getElementById('btn-toggle-key-visibility');
 
   if (lotInput) lotInput.value = appConfig.lotSize || 25;
-  if (riskInput) riskInput.value = appConfig.riskPct || 1.5;
+  if (riskInput) riskInput.value = appConfig.riskPct || 1.0;
+  if (maxModInput) maxModInput.value = appConfig.maxTradesPerModule || 2;
+  if (maxDayInput) maxDayInput.value = appConfig.maxDailyTrades || 3;
+  if (maxLossInput) maxLossInput.value = appConfig.maxDailyLoss || 3000;
   if (keyInput) keyInput.value = appConfig.apiKey || '';
+
+  if (heroMin) heroMin.value = appConfig.heroMinPremium || 5;
+  if (heroMax) heroMax.value = appConfig.heroMaxPremium || 40;
+  if (heroRisk) heroRisk.value = appConfig.heroRiskPct || 0.75;
+  if (compPts) compPts.value = appConfig.afternoonCompPts || 35;
 
   toggleKey?.addEventListener('click', () => {
     keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
   });
 
   saveBtn?.addEventListener('click', () => {
-    chrome.storage.local.set({
+    const updated = {
       ts_nifty_lot_size: parseInt(lotInput.value, 10) || 25,
-      ts_nifty_risk_pct: parseFloat(riskInput.value) || 1.5,
+      ts_nifty_risk_pct: parseFloat(riskInput.value) || 1.0,
+      ts_max_trades_module: parseInt(maxModInput?.value, 10) || 2,
+      ts_max_daily_trades: parseInt(maxDayInput?.value, 10) || 3,
+      ts_max_daily_loss: parseFloat(maxLossInput?.value) || 3000,
+      ts_hero_min_premium: parseFloat(heroMin?.value) || 5,
+      ts_hero_max_premium: parseFloat(heroMax?.value) || 40,
+      ts_hero_risk_pct: parseFloat(heroRisk?.value) || 0.75,
+      ts_afternoon_comp_pts: parseFloat(compPts?.value) || 35,
       ts_gemini_api_key: keyInput.value.trim()
-    });
+    };
+
+    chrome.storage.local.set(updated);
+    Object.assign(appConfig, updated);
 
     const status = document.getElementById('save-status-msg');
     status.textContent = '✓ Institutional settings saved successfully!';

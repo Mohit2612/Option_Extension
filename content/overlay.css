@@ -256,3 +256,64 @@
   color: #FF3B69;
   border-color: rgba(255, 59, 105, 0.3);
 }
+
+/* ================= HERO-ZERO & STRATEGY WINDOW BADGES ================= */
+.hud-extra-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 8px;
+}
+
+.hero-zero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.hero-zero-badge.armed {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid #F59E0B;
+  color: #FBBF24;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+  animation: pulse-gold 2s infinite ease-in-out;
+}
+
+.hero-zero-badge.locked {
+  background: rgba(255, 59, 105, 0.2);
+  border: 1px solid #FF3B69;
+  color: #FF3B69;
+}
+
+.hero-zero-badge.standby {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #94A3B8;
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.2); }
+  50% { box-shadow: 0 0 16px rgba(245, 158, 11, 0.5); }
+}
+
+.window-countdown-pill {
+  font-size: 10px;
+  color: #00D4FF;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

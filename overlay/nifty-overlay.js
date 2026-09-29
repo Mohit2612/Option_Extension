@@ -81,6 +81,9 @@ export const NiftyOverlayRenderer = {
     if (signal === 'BUY') signalColorClass = 'hud-signal-buy';
     if (signal === 'SELL') signalColorClass = 'hud-signal-sell';
 
+    const heroStatus = signalData.heroZeroStatus || { armed: false, locked: false, text: 'Standby' };
+    const countdown = signalData.countdown || { label: 'Next Window: 09:30 ORB' };
+
     hud.innerHTML = `
       <div class="nifty-hud-header">
         <div class="hud-brand">
@@ -118,6 +121,15 @@ export const NiftyOverlayRenderer = {
             <strong>Invalidation:</strong> ${signalData.invalidation}
           </div>` : ''}
         </div>
+      </div>
+
+      <div class="hud-extra-row">
+        <span class="hero-zero-badge ${heroStatus.locked ? 'locked' : heroStatus.armed ? 'armed' : 'standby'}">
+          ${heroStatus.locked ? '🔒 HZ Locked (2-Loss)' : heroStatus.armed ? '⚡ Hero-Zero Armed' : '⏳ HZ Standby'}
+        </span>
+        <span class="window-countdown-pill">
+          ⏱️ ${countdown.label || '09:30 ORB / 13:40 Afternoon'}
+        </span>
       </div>
     `;
 

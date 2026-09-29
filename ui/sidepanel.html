@@ -115,6 +115,12 @@
             Regime: Scanning Active Candles...
           </div>
 
+          <!-- Time Window & Hero-Zero Badges -->
+          <div class="hud-extra-row" style="margin-top:6px; padding-top:4px;">
+            <span class="hero-zero-badge standby" id="hero-zero-status-badge">⏳ HZ Standby</span>
+            <span class="window-countdown-pill" id="hero-countdown-pill">⏱️ 09:30 ORB / 13:40 Afternoon</span>
+          </div>
+
           <p class="hero-rationale" id="hero-rationale">
             Rule engine is monitoring 5m candle closes and Nifty drivers. Default is WAIT until all confluence criteria align.
           </p>
@@ -263,17 +269,76 @@
         </div>
 
         <div class="strategies-list">
+
+          <!-- MODULE A: HERO-ZERO -->
+          <div class="strategy-toggle-card highlight-card">
+            <div class="toggle-header">
+              <strong>⚡ Module A: Hero-Zero (Expiry Day Gamma)</strong>
+              <input type="checkbox" id="cfg-strat-hero-zero" checked>
+            </div>
+            <p>Late-day gamma burst on Expiry Day only. Fixed pre-accepted small risk.</p>
+            <div class="module-config-grid">
+              <div class="cfg-item">
+                <span class="cfg-lbl">Premium Band</span>
+                <span class="cfg-val">₹<input type="number" id="cfg-hero-min-premium" value="5" style="width:42px;"> to ₹<input type="number" id="cfg-hero-max-premium" value="40" style="width:42px;"></span>
+              </div>
+              <div class="cfg-item">
+                <span class="cfg-lbl">Entry Window</span>
+                <span class="cfg-val"><input type="text" id="cfg-hero-window-start" value="13:45" style="width:48px;"> - <input type="text" id="cfg-hero-window-end" value="14:45" style="width:48px;"> IST</span>
+              </div>
+              <div class="cfg-item">
+                <span class="cfg-lbl">Max Risk %</span>
+                <span class="cfg-val"><input type="number" id="cfg-hero-risk-pct" value="0.75" step="0.25" style="width:52px;">%</span>
+              </div>
+            </div>
+            <div class="hero-risk-warning" style="margin-top:6px; font-size:10px; color:#F59E0B; background:rgba(245,158,11,0.1); padding:4px 8px; border-radius:4px;">
+              ⚠️ <strong>Mandatory Warning:</strong> Probable outcome: most such trades lose 100% of the premium. Risk only what you can afford to lose. Module locks after 2 failed trades.
+            </div>
+          </div>
+
+          <!-- MODULE B: 09:15 AM FIRST 15-MIN CANDLE -->
           <div class="strategy-toggle-card">
             <div class="toggle-header">
-              <strong>1. Opening Range Breakout (ORB)</strong>
-              <input type="checkbox" id="cfg-strat-orb" checked>
+              <strong>🌅 Module B: 09:15 AM Opening Range Strategy</strong>
+              <input type="checkbox" id="cfg-strat-opening-range" checked>
             </div>
-            <p>15m ORH/ORL breakout with VIX and GIFT Nifty confirmation (Active 09:20 - 11:15).</p>
+            <p>Evaluates 09:15-09:30 candle, GIFT Nifty gap, and issues Day Plan at 09:30 sharp.</p>
+            <div class="module-suboptions" style="font-size:11px; display:flex; flex-direction:column; gap:4px; margin-top:6px;">
+              <label><input type="checkbox" id="cfg-orb-sub-breakout" checked> Opening Range Breakout (ORB)</label>
+              <label><input type="checkbox" id="cfg-orb-sub-failed" checked> Failed-Breakout Reversal</label>
+              <label><input type="checkbox" id="cfg-orb-sub-gapfill" checked> Gap-Fill Trade</label>
+              <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+                <span>Stop Loss Mode:</span>
+                <select id="cfg-orb-sl-mode" style="background:#0F172A; color:#E2E8F0; border:1px solid #334155; border-radius:4px; font-size:10px; padding:2px 4px;">
+                  <option value="midpoint" selected>15m Candle Midpoint</option>
+                  <option value="opposite">Opposite Side of Range</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- MODULE C: 1:40 PM AFTERNOON STRATEGY -->
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>🕒 Module C: 1:40 PM Afternoon Strategy <span class="tag-experimental" style="font-size:9px; background:#475569; color:#CBD5E1; padding:1px 5px; border-radius:3px;">Experimental until backtested</span></strong>
+              <input type="checkbox" id="cfg-strat-afternoon-140" checked>
+            </div>
+            <p>Snapshots 12:00-13:40 compression. Trades afternoon expansion, VWAP pullback, or extreme reversal.</p>
+            <div class="module-config-grid">
+              <div class="cfg-item">
+                <span class="cfg-lbl">Time Window</span>
+                <span class="cfg-val">13:40 - 14:30 IST</span>
+              </div>
+              <div class="cfg-item">
+                <span class="cfg-lbl">Compression Max</span>
+                <span class="cfg-val"><input type="number" id="cfg-afternoon-comp-pts" value="35" style="width:45px;"> pts</span>
+              </div>
+            </div>
           </div>
 
           <div class="strategy-toggle-card">
             <div class="toggle-header">
-              <strong>2. VWAP Trend Pullback / Reversion</strong>
+              <strong>4. VWAP Trend Pullback / Reversion</strong>
               <input type="checkbox" id="cfg-strat-vwap" checked>
             </div>
             <p>Trend days: Pullback to VWAP with rejection candle; Range days: Mean reversion.</p>
@@ -281,7 +346,7 @@
 
           <div class="strategy-toggle-card">
             <div class="toggle-header">
-              <strong>3. 9/21 EMA Trend Pullback</strong>
+              <strong>5. 9/21 EMA Trend Pullback</strong>
               <input type="checkbox" id="cfg-strat-ema" checked>
             </div>
             <p>Momentum bounce in higher-timeframe trend alignment.</p>
@@ -289,7 +354,7 @@
 
           <div class="strategy-toggle-card">
             <div class="toggle-header">
-              <strong>4. S/R & Liquidity Sweep Reversal</strong>
+              <strong>6. S/R & Liquidity Sweep Reversal</strong>
               <input type="checkbox" id="cfg-strat-sweep" checked>
             </div>
             <p>Stop hunt beyond Previous Day High/Low (PDH/PDL) or Max OI boundary.</p>
@@ -297,26 +362,10 @@
 
           <div class="strategy-toggle-card">
             <div class="toggle-header">
-              <strong>5. Breakout-Retest</strong>
+              <strong>7. Breakout-Retest</strong>
               <input type="checkbox" id="cfg-strat-retest" checked>
             </div>
             <p>Broken resistance turned support with volume expansion.</p>
-          </div>
-
-          <div class="strategy-toggle-card">
-            <div class="toggle-header">
-              <strong>6. Gap Fill / Gap-and-Go</strong>
-              <input type="checkbox" id="cfg-strat-gap" checked>
-            </div>
-            <p>Morning gap evaluation based on GIFT Nifty and first 15m candle.</p>
-          </div>
-
-          <div class="strategy-toggle-card">
-            <div class="toggle-header">
-              <strong>7. Expiry Day Special (Thursdays)</strong>
-              <input type="checkbox" id="cfg-strat-expiry" checked>
-            </div>
-            <p>Max Pain magnetic pull and 14:00 gamma burst setup (Reduced lot size).</p>
           </div>
         </div>
       </section>
@@ -344,11 +393,36 @@
           </div>
         </div>
 
+        <!-- Dedicated Hero-Zero Scoreboard -->
+        <div class="card-section hz-scoreboard-card" style="border:1px solid rgba(245, 158, 11, 0.3); background:rgba(245, 158, 11, 0.05); border-radius:8px; padding:10px; margin-bottom:12px;">
+          <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>⚡ Hero-Zero Verified Scoreboard</span>
+            <span style="font-size:10px; color:#FBBF24;">Expiry Day Only</span>
+          </div>
+          <div class="journal-stats-grid" style="margin-top:8px; margin-bottom:8px;">
+            <div class="jstat-box">
+              <span class="jstat-val" id="hz-total-trades">0</span>
+              <span class="jstat-lbl">TOTAL TRADES</span>
+            </div>
+            <div class="jstat-box">
+              <span class="jstat-val text-emerald" id="hz-winrate">0%</span>
+              <span class="jstat-lbl">WIN RATE</span>
+            </div>
+            <div class="jstat-box">
+              <span class="jstat-val text-cyan" id="hz-expectancy">0.00 R</span>
+              <span class="jstat-lbl">EXPECTANCY</span>
+            </div>
+          </div>
+          <p style="font-size:10px; color:#FBBF24; line-height:1.4; margin:0;">
+            <strong>Mandatory Reality Check:</strong> Most Hero-Zero trades expire worthless (-100% premium). Real profitability emerges strictly through positive expectancy (small losses, 2x-4x winners) over 30+ disciplined sessions.
+          </p>
+        </div>
+
         <!-- Backtest Trigger Button -->
         <div class="card-section">
           <div class="section-title">Historical Backtest Simulator</div>
           <p style="font-size:11.5px; color:#94A3B8; margin-bottom:8px;">
-            Replays the 7 Nifty strategies across recent visible chart candles to test rule integrity.
+            Replays all Nifty modules (ORB, 1:40 Afternoon, Hero-Zero, VWAP) across recent historical candles to test rule integrity.
           </p>
           <button id="btn-run-backtest" class="btn-secondary">Run Historical Candle Backtest</button>
           <div id="backtest-results-box" class="backtest-results hidden"></div>
@@ -382,8 +456,26 @@
 
           <div class="form-row">
             <label for="cfg-risk-pct">Max Capital Risk per Trade (%)</label>
-            <input type="number" id="cfg-risk-pct" value="1.5" step="0.1" min="0.5" max="3.0">
-            <span class="field-hint">30-Year Rule: Never exceed 1.5% capital risk on index options.</span>
+            <input type="number" id="cfg-risk-pct" value="1.0" step="0.1" min="0.5" max="3.0">
+            <span class="field-hint">30-Year Rule: Never exceed 1-1.5% capital risk on index options.</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-max-trades-module">Max Trades Per Module / Day</label>
+            <input type="number" id="cfg-max-trades-module" value="2" min="1" max="4">
+            <span class="field-hint">Hard circuit breaker: Default 2 trades per strategy.</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-max-daily-trades">Max Total Trades / Day</label>
+            <input type="number" id="cfg-max-daily-trades" value="3" min="1" max="6">
+            <span class="field-hint">Global daily trade limit across all modules.</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-max-daily-loss">Max Daily Loss Limit (₹)</label>
+            <input type="number" id="cfg-max-daily-loss" value="3000" step="500">
+            <span class="field-hint">Trading stops automatically for the day if this loss limit is breached.</span>
           </div>
 
           <div class="form-row">

@@ -1,12 +1,68 @@
 /**
- * TradeSight AI - Background Service Worker (Manifest V3)
- * Orchestrates tab management, screenshot capture, panel behavior, and message routing.
+ * TradeSight NIFTY 50 - Background Service Worker (Manifest V3)
+ * Orchestrates time-aware alarms, session clock scheduler, screenshot captures, and tab messaging.
  */
+
+import { SessionClock } from '../services/sessionClock.js';
 
 // Enable side panel to open on toolbar action click
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.warn('[TradeSight AI SW] sidePanel behavior warning:', error));
+
+// Set up 1-minute ticker alarm for IST Market Schedule
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('TRADESIGHT_IST_TICKER', {
+    periodInMinutes: 1
+  });
+  console.info('[TradeSight SW] IST Ticker alarm created (1-min period).');
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'TRADESIGHT_IST_TICKER') {
+    handleMinuteTick();
+  }
+});
+
+async function handleMinuteTick() {
+  const ist = SessionClock.getIstParts();
+  const { hour, minute } = ist;
+
+  // Key Strategy Milestones in IST
+  const milestones = [
+    { h: 9, m: 15, event: 'MARKET_OPEN_0915' },
+    { h: 9, m: 30, event: 'ORB_DAY_PLAN_0930' },
+    { h: 13, m: 40, event: 'AFTERNOON_WINDOW_1340' },
+    { h: 13, m: 45, event: 'HERO_ZERO_WINDOW_1345' },
+    { h: 15, m: 15, event: 'SQUARE_OFF_1515' }
+  ];
+
+  const matched = milestones.find((m) => m.h === hour && m.m === minute);
+  if (matched) {
+    console.info(`[TradeSight SW] Reached IST milestone: ${matched.event}`);
+    // Broadcast event to active TradingView tabs and side panel
+    notifyTabsAndPanel({
+      action: 'IST_MILESTONE_TRIGGER',
+      event: matched.event,
+      istTime: ist.formattedTime
+    });
+  }
+}
+
+async function notifyTabsAndPanel(message) {
+  try {
+    const tabs = await chrome.tabs.query({ url: '*://*.tradingview.com/*' });
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+      }
+    }
+    // Also notify sidepanel if open
+    chrome.runtime.sendMessage(message).catch(() => {});
+  } catch (e) {
+    // Ignore inactive message channels
+  }
+}
 
 // Message Router
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -27,15 +83,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (action === 'GET_IST_CLOCK') {
+    sendResponse({ success: true, ist: SessionClock.getIstParts() });
+    return false;
+  }
+
   if (action === 'PING') {
     sendResponse({ status: 'ok', timestamp: Date.now() });
     return false;
   }
 });
 
-/**
- * Capture visible tab as high-definition PNG
- */
 async function handleCaptureVisibleTab(sendResponse) {
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -44,15 +102,6 @@ async function handleCaptureVisibleTab(sendResponse) {
       return;
     }
 
-    if (!activeTab.url || !activeTab.url.includes('tradingview.com')) {
-      sendResponse({
-        success: false,
-        error: 'Active tab is not a TradingView chart. Please switch to tradingview.com.'
-      });
-      return;
-    }
-
-    // Capture tab view
     const dataUrl = await chrome.tabs.captureVisibleTab(activeTab.windowId, {
       format: 'png',
       quality: 100
@@ -68,9 +117,6 @@ async function handleCaptureVisibleTab(sendResponse) {
   }
 }
 
-/**
- * Retrieve active tab metadata
- */
 async function handleGetActiveTab(sendResponse) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -80,9 +126,6 @@ async function handleGetActiveTab(sendResponse) {
   }
 }
 
-/**
- * Forward message to content script in the active tab (with auto re-injection check)
- */
 async function handleForwardToActiveTab(payload, sendResponse) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -91,14 +134,10 @@ async function handleForwardToActiveTab(payload, sendResponse) {
       return;
     }
 
-    // Attempt sending directly to content script
     try {
       const response = await chrome.tabs.sendMessage(tab.id, payload);
       sendResponse({ success: true, data: response });
     } catch (msgErr) {
-      // Content script might not be injected yet if page was open prior to extension reload
-      console.warn('[TradeSight AI SW] Content script unreachable, attempting injection:', msgErr.message);
-
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['content/chart-detector.js', 'content/overlay-renderer.js']
@@ -109,7 +148,6 @@ async function handleForwardToActiveTab(payload, sendResponse) {
         files: ['content/overlay.css']
       });
 
-      // Retry sending message after injection
       const retryResponse = await chrome.tabs.sendMessage(tab.id, payload);
       sendResponse({ success: true, data: retryResponse });
     }

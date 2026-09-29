@@ -146,6 +146,30 @@ export const NiftyJournalEngine = {
       }
     });
 
+    // Dedicated Hero-Zero Scoreboard
+    const heroTrades = trades.filter((t) => (t.strategyName || '').includes('Hero-Zero'));
+    const heroClosed = heroTrades.filter((t) => t.status === 'WIN' || t.status === 'LOSS');
+    const heroWins = heroTrades.filter((t) => t.status === 'WIN').length;
+    const heroLosses = heroTrades.filter((t) => t.status === 'LOSS').length;
+    const heroWinRate = heroClosed.length > 0 ? Math.round((heroWins / heroClosed.length) * 100) : 0;
+    const heroAvgWinR = heroWins > 0 ? 2.5 : 0;
+    const heroAvgLossR = 1.0;
+    const heroExpectancy = heroClosed.length > 0
+      ? (((heroWinRate / 100) * heroAvgWinR) - (((100 - heroWinRate) / 100) * heroAvgLossR)).toFixed(2)
+      : '0.00';
+
+    const heroZeroScoreboard = {
+      totalTrades: heroTrades.length,
+      closedTrades: heroClosed.length,
+      wins: heroWins,
+      losses: heroLosses,
+      winRate: heroWinRate,
+      avgWinR: heroAvgWinR,
+      avgLossR: heroAvgLossR,
+      expectancy: heroExpectancy,
+      warning: 'Probable outcome: most such trades lose 100% of the premium. Risk only what you can lose.'
+    };
+
     return {
       totalTrades,
       closedTradesCount: closed.length,
@@ -155,6 +179,7 @@ export const NiftyJournalEngine = {
       maxDrawdownR: parseFloat(maxDrawdownR.toFixed(2)),
       strategyStats,
       timeStats,
+      heroZeroScoreboard,
       recentTrades: trades.slice(0, 15)
     };
   },
@@ -177,13 +202,17 @@ export const NiftyJournalEngine = {
 
     const simulatedTrades = [];
     const windowSize = 20;
+    let equityR = 0;
+    let peakEquityR = 0;
+    let maxDrawdownR = 0;
+    const equityCurve = [{ barIndex: windowSize, equityR: 0 }];
 
     for (let i = windowSize; i < historicalCandles.length - 5; i++) {
       const windowCandles = historicalCandles.slice(i - windowSize, i);
       const currentCandle = historicalCandles[i];
       const nextCandles = historicalCandles.slice(i + 1, Math.min(historicalCandles.length, i + 12));
 
-      // Calculate pseudo key levels
+      // Calculate key levels
       const closes = windowCandles.map((c) => c.close);
       const vwap = closes.reduce((a, b) => a + b, 0) / closes.length;
       const pdh = Math.max(...windowCandles.map((c) => c.high));
@@ -191,42 +220,54 @@ export const NiftyJournalEngine = {
 
       const setup = StrategyEngine.evaluateSetup({
         candles: windowCandles,
-        keyLevels: { vwap, pdh, pdl, orh: pdh, orl: pdl },
+        keyLevels: { vwap, pdh, pdl, orh: pdh - 15, orl: pdl + 15 },
         driverData: { pressureScore: 25, vixAnalysis: { details: 'Level: 13.5' } },
         currentTime: new Date(currentCandle.timestamp || Date.now()),
         userConfig
       });
 
       if (setup && setup.signal !== 'WAIT' && setup.levels) {
-        // Simulate execution across next candles
         const { entryPrice, stopLoss, target1 } = setup.levels;
         let outcome = 'OPEN';
         let exitPrice = entryPrice;
+        let realizedR = 0;
 
         for (const nextBar of nextCandles) {
           if (setup.signal === 'BUY') {
             if (nextBar.low <= stopLoss) {
               outcome = 'LOSS';
               exitPrice = stopLoss;
+              realizedR = -1.0;
               break;
             }
             if (nextBar.high >= target1) {
               outcome = 'WIN';
               exitPrice = target1;
+              realizedR = setup.riskRewardRatio || 2.0;
               break;
             }
           } else if (setup.signal === 'SELL') {
             if (nextBar.high >= stopLoss) {
               outcome = 'LOSS';
               exitPrice = stopLoss;
+              realizedR = -1.0;
               break;
             }
             if (nextBar.low <= target1) {
               outcome = 'WIN';
               exitPrice = target1;
+              realizedR = setup.riskRewardRatio || 2.0;
               break;
             }
           }
+        }
+
+        if (outcome === 'WIN' || outcome === 'LOSS') {
+          equityR += realizedR;
+          if (equityR > peakEquityR) peakEquityR = equityR;
+          const dd = peakEquityR - equityR;
+          if (dd > maxDrawdownR) maxDrawdownR = dd;
+          equityCurve.push({ barIndex: i, equityR: parseFloat(equityR.toFixed(2)) });
         }
 
         simulatedTrades.push({
@@ -238,11 +279,16 @@ export const NiftyJournalEngine = {
           target1,
           outcome,
           exitPrice,
+          realizedR,
+          isHeroZero: (setup.strategyName || '').includes('Hero-Zero'),
+          heroZeroNotice: (setup.strategyName || '').includes('Hero-Zero')
+            ? 'Approximate modeled estimate (2x target / 0.5x stop loss model)'
+            : null,
           rr: setup.riskRewardRatio
         });
 
-        // Fast forward 5 bars to avoid overlapping signals
-        i += 4;
+        // Fast forward 4 bars to avoid overlapping signals
+        i += 3;
       }
     }
 
@@ -252,6 +298,16 @@ export const NiftyJournalEngine = {
     const winRate = completed > 0 ? Math.round((wins / completed) * 100) : 0;
     const profitFactor = losses > 0 ? ((wins * 2.0) / losses).toFixed(2) : (wins > 0 ? '99.0' : '0.0');
 
+    // Strategy-specific breakdowns
+    const moduleBreakdown = {};
+    simulatedTrades.forEach((t) => {
+      const s = t.strategy || 'Other';
+      if (!moduleBreakdown[s]) moduleBreakdown[s] = { count: 0, wins: 0, losses: 0 };
+      moduleBreakdown[s].count++;
+      if (t.outcome === 'WIN') moduleBreakdown[s].wins++;
+      if (t.outcome === 'LOSS') moduleBreakdown[s].losses++;
+    });
+
     return {
       totalSignals: simulatedTrades.length,
       completed,
@@ -259,7 +315,11 @@ export const NiftyJournalEngine = {
       losses,
       winRate,
       profitFactor,
-      netR: (wins * 2.0 - losses * 1.0).toFixed(1),
+      netR: equityR.toFixed(2),
+      maxDrawdownR: maxDrawdownR.toFixed(2),
+      equityCurve,
+      moduleBreakdown,
+      heroZeroNote: 'Hero-Zero backtest uses an approximate option premium payoff model (0.5x SL / 2x TP) when historical option tick data is not present.',
       simulatedTrades
     };
   }

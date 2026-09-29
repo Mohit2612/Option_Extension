@@ -6,17 +6,28 @@
 
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { PatternEngine } from '../patterns/pattern-engine.js';
+import { OpeningRangeStrategy } from './openingRange.js';
+import { Afternoon140Strategy } from './afternoon140.js';
+import { HeroZeroStrategy } from './heroZero.js';
 
 export const StrategyEngine = {
+  // Strategy Registry
+  modules: {
+    heroZero: HeroZeroStrategy,
+    openingRange: OpeningRangeStrategy,
+    afternoon140: Afternoon140Strategy
+  },
+
   /**
    * Main strategy evaluation pipeline
-   * @param {Object} input - { candles, keyLevels, drivers, dailyLossCount, userConfig, currentTime }
+   * @param {Object} input - { candles, keyLevels, drivers, dailyLossCount, userConfig, currentTime, dailyState }
    */
   evaluateSetup({
     candles = [],
     keyLevels = {},
     driverData = {},
     dailyLossCount = 0,
+    dailyState = {},
     userConfig = {},
     currentTime = new Date()
   }) {
@@ -49,8 +60,32 @@ export const StrategyEngine = {
     // 3. Detect Candlestick Pattern at Key Level
     const detectedPattern = PatternEngine.evaluateLatestCandle(candles, keyLevels, regime.trend);
 
-    // 4. Evaluate Strategies in priority order based on current regime
+    // 4. Evaluate Strategies in priority order based on current regime & time windows
     const strategySignals = [];
+
+    // Module A: Hero-Zero Expiry Gamma Engine (Expiry day 13:45-14:45 peak priority)
+    if (userConfig.strategies?.heroZero?.enabled !== false) {
+      const hzSig = HeroZeroStrategy.evaluate({
+        candles, keyLevels, driverData, pattern: detectedPattern, regime, dailyState, userConfig, currentTime
+      });
+      if (hzSig && hzSig.signal !== 'WAIT') strategySignals.push(hzSig);
+    }
+
+    // Module B: 09:15 / First 15-Minute Candle Strategy
+    if (userConfig.strategies?.openingRange?.enabled !== false) {
+      const orbSig = OpeningRangeStrategy.evaluate({
+        candles, keyLevels, driverData, userConfig, currentTime
+      });
+      if (orbSig && orbSig.signal !== 'WAIT') strategySignals.push(orbSig);
+    }
+
+    // Module C: 1:40 PM Afternoon Strategy (13:40-14:30 window)
+    if (userConfig.strategies?.afternoon140?.enabled !== false) {
+      const pmSig = Afternoon140Strategy.evaluate({
+        candles, keyLevels, driverData, pattern: detectedPattern, regime, userConfig, currentTime
+      });
+      if (pmSig && pmSig.signal !== 'WAIT') strategySignals.push(pmSig);
+    }
 
     // Strategy 1: Opening Range Breakout (Active 09:20 - 10:30)
     if (userConfig.strategies?.orb?.enabled !== false) {

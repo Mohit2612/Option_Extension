@@ -129,6 +129,9 @@
     if (signal === 'BUY') signalClass = 'hud-signal-buy';
     if (signal === 'SELL') signalClass = 'hud-signal-sell';
 
+    const heroStatus = data.heroZeroStatus || { armed: false, locked: false };
+    const countdown = data.countdown || { label: '09:30 ORB / 13:40 Afternoon' };
+
     hud.innerHTML = `
       <div class="nifty-hud-header">
         <div class="hud-brand">
@@ -167,6 +170,15 @@
             <strong>Invalidation:</strong> ${data.invalidation}
           </div>` : ''}
         </div>
+      </div>
+
+      <div class="hud-extra-row">
+        <span class="hero-zero-badge ${heroStatus.locked ? 'locked' : heroStatus.armed ? 'armed' : 'standby'}">
+          ${heroStatus.locked ? '🔒 HZ Locked' : heroStatus.armed ? '⚡ Hero-Zero Armed' : '⏳ HZ Standby'}
+        </span>
+        <span class="window-countdown-pill">
+          ⏱️ ${countdown.label}
+        </span>
       </div>
     `;
 
@@ -211,37 +223,83 @@
     svg.setAttribute('width', '100%');
     svg.setAttribute('height', '100%');
 
-    const levels = data.levels;
-    if (!levels) return;
+    const levels = data.levels || {};
+    const keyLevels = data.keyLevels || {};
 
-    // Anchor prices relative to current visible bounds
-    const prices = [levels.entryPrice, levels.stopLoss, levels.target1, levels.target2].filter(Boolean);
-    const minPx = Math.min(...prices) - 25;
-    const maxPx = Math.max(...prices) + 25;
+    // Collect all visible price points for coordinate mapping
+    const prices = [
+      levels.entryPrice,
+      levels.stopLoss,
+      levels.target1,
+      levels.target2,
+      keyLevels.vwap,
+      keyLevels.pdh,
+      keyLevels.pdl,
+      keyLevels.orh,
+      keyLevels.orl
+    ].filter((p) => typeof p === 'number' && !isNaN(p));
+
+    if (prices.length === 0) return;
+
+    const minPx = Math.min(...prices) - 30;
+    const maxPx = Math.max(...prices) + 30;
     const range = Math.max(10, maxPx - minPx);
 
     const getY = (p) => {
       const normalized = (p - minPx) / range;
       const y = rect.height * (1.0 - normalized);
-      return Math.max(30, Math.min(rect.height - 30, y));
+      return Math.max(25, Math.min(rect.height - 25, y));
     };
 
-    // Entry Line (Cyan)
+    // 1. Draw Opening Range Box (09:15 - 09:30 ORB)
+    const orh = keyLevels.orh;
+    const orl = keyLevels.orl;
+    if (orh && orl && orh > orl) {
+      const yHigh = getY(orh);
+      const yLow = getY(orl);
+      const boxHeight = Math.max(4, yLow - yHigh);
+
+      const orbBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      orbBox.setAttribute('x', '60');
+      orbBox.setAttribute('y', yHigh.toString());
+      orbBox.setAttribute('width', (rect.width - 130).toString());
+      orbBox.setAttribute('height', boxHeight.toString());
+      orbBox.setAttribute('fill', 'rgba(0, 212, 255, 0.06)');
+      orbBox.setAttribute('stroke', 'rgba(0, 212, 255, 0.3)');
+      orbBox.setAttribute('stroke-width', '1');
+      orbBox.setAttribute('stroke-dasharray', '4 4');
+      svg.appendChild(orbBox);
+
+      // ORB Midpoint line
+      const orMid = (orh + orl) / 2;
+      drawHorizontalLine(svg, rect.width, getY(orMid), '#64748B', `ORB MID: ${orMid.toFixed(1)}`, 'dashed');
+      drawHorizontalLine(svg, rect.width, yHigh, '#00D4FF', `ORH: ${orh}`, 'solid');
+      drawHorizontalLine(svg, rect.width, yLow, '#00D4FF', `ORL: ${orl}`, 'solid');
+    }
+
+    // 2. VWAP Line
+    if (keyLevels.vwap) {
+      drawHorizontalLine(svg, rect.width, getY(keyLevels.vwap), '#A855F7', `VWAP: ${keyLevels.vwap}`, 'dashed');
+    }
+
+    // 3. Day High / Low Lines
+    if (keyLevels.pdh) {
+      drawHorizontalLine(svg, rect.width, getY(keyLevels.pdh), '#F59E0B', `PDH: ${keyLevels.pdh}`, 'dashed');
+    }
+    if (keyLevels.pdl) {
+      drawHorizontalLine(svg, rect.width, getY(keyLevels.pdl), '#EC4899', `PDL: ${keyLevels.pdl}`, 'dashed');
+    }
+
+    // 4. Execution Levels: Entry, SL, TP1, TP2
     if (levels.entryPrice) {
       drawHorizontalLine(svg, rect.width, getY(levels.entryPrice), '#00D4FF', `ENTRY: ${levels.entryPrice}`, 'dashed');
     }
-
-    // Stop Loss Line (Red)
     if (levels.stopLoss) {
       drawHorizontalLine(svg, rect.width, getY(levels.stopLoss), '#FF3B69', `SL: ${levels.stopLoss}`, 'solid');
     }
-
-    // Target 1 Line (Green)
     if (levels.target1) {
       drawHorizontalLine(svg, rect.width, getY(levels.target1), '#00E676', `TP1: ${levels.target1} [1:2.0]`, 'dashed');
     }
-
-    // Target 2 Line (Green)
     if (levels.target2) {
       drawHorizontalLine(svg, rect.width, getY(levels.target2), '#00E676', `TP2: ${levels.target2} [Runner]`, 'dashed');
     }
