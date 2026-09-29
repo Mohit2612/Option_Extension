@@ -26,6 +26,9 @@ import { ScalpPanel } from './scalpPanel.js';
 import { ScalpStrategy } from '../scalping/scalpStrategy.js';
 import { StreamingProvider } from '../services/streamingProvider.js';
 import { ScalpRenderer } from '../overlay/scalpRenderer.js';
+import { IndicatorManager } from '../indicators/indicatorManager.js';
+import { IndicatorTogglesUI } from './indicatorToggles.js';
+import { DataProvider } from '../services/dataProvider.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -37,6 +40,9 @@ let streamingProvider = null;
 let currentChartMeta = null;
 let dailyLossCount = 0;
 let isRiskLocked = false;
+let indicatorManager = null;
+let indicatorTogglesUI = null;
+let latestIndicatorState = null;
 
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', async () => {
@@ -81,6 +87,22 @@ async function initApp() {
   });
 
   handleStreamingProviderState(ScalpPanel.isEnabled);
+
+  // Initialize Technical Indicator Modules (NSDT Auto S/R & Pivot Trendlines 30/30)
+  indicatorManager = new IndicatorManager();
+  await indicatorManager.initFromStorage();
+  indicatorTogglesUI = new IndicatorTogglesUI(indicatorManager, {
+    onMasterToggle: () => {
+      runNiftyScan();
+    },
+    onNSDTToggle: () => {
+      runNiftyScan();
+    },
+    onTrendlineToggle: () => {
+      runNiftyScan();
+    }
+  });
+  indicatorTogglesUI.init();
 
   // Probe TradingView chart
   probeTradingViewChart();
@@ -143,7 +165,15 @@ async function loadUserConfig() {
         gradeBThreshold: res.ts_grade_b_threshold || 65,
         scalpEnabled: res.ts_scalp_module_enabled === true,
         scalpPreset: res.ts_scalp_preset || 'CONSERVATIVE',
-        scalpMaxLatency: res.ts_scalp_max_latency || 1500
+        scalpMaxLatency: res.ts_scalp_max_latency || 1500,
+        indicatorsMaster: res.ts_indicators_master === true,
+        nsdtEnabled: res.ts_nsdt_enabled === true,
+        trendlineEnabled: res.ts_trendline_enabled === true,
+        nsdtL1: res.ts_nsdt_l1 || 5,
+        nsdtL2: res.ts_nsdt_l2 || 10,
+        nsdtL3: res.ts_nsdt_l3 || 20,
+        clusterBandAtr: res.ts_cluster_band || 0.15,
+        tlBufferAtr: res.ts_tl_buffer || 0.1
       };
       resolve(appConfig);
     });
@@ -276,8 +306,13 @@ async function runNiftyScan() {
       maxPain: Math.round(currentPrice / 50) * 50
     };
 
-    // 4. Synthesize Working Candles (incorporating live OHLC from TV legend if available)
-    const candles = generateWorkingCandles(currentPrice, currentChartMeta?.candleOHLC);
+    // 4. Synthesize Working Candles with at least 500 bars for indicator calculation & warm-up
+    const candles = DataProvider.getCandles({
+      basePrice: currentPrice,
+      minBars: 500,
+      existingBars: generateWorkingCandles(currentPrice, currentChartMeta?.candleOHLC),
+      timeframe: currentChartMeta?.timeframe || '15m'
+    });
 
     // 5. Evaluate Candlestick Pattern on Active Chart
     const detectedPattern = PatternEngine.evaluateLatestCandle(candles, keyLevels);
@@ -364,6 +399,44 @@ async function runNiftyScan() {
       },
       currentTime: now
     });
+
+    // Update Technical Indicator Engines (NSDT Auto S/R & Pivot Trendlines 30/30)
+    if (indicatorManager) {
+      latestIndicatorState = indicatorManager.update(candles);
+      indicatorTogglesUI?.renderState(latestIndicatorState);
+
+      // Confluence integration: location quality & obstacle checks
+      if (latestIndicatorState?.masterEnabled && latestIndicatorState.confluenceSummary) {
+        const conf = latestIndicatorState.confluenceSummary;
+        if (conf.netScore !== 0) {
+          qualityScore.totalScore = Math.max(0, Math.min(100, qualityScore.totalScore + conf.netScore));
+          if (qualityScore.totalScore >= (appConfig.gradeAThreshold || 80)) {
+            qualityScore.grade = 'A';
+            qualityScore.gradeTitle = `GRADE A • ${Math.round(qualityScore.totalScore)}/100`;
+            qualityScore.isAllowed = true;
+            qualityScore.statusLabel = 'ALLOWED (1.0x)';
+          } else if (qualityScore.totalScore >= (appConfig.gradeBThreshold || 65)) {
+            qualityScore.grade = 'B';
+            qualityScore.gradeTitle = `GRADE B • ${Math.round(qualityScore.totalScore)}/100`;
+            qualityScore.isAllowed = appConfig.allowGradeB !== false;
+            qualityScore.statusLabel = qualityScore.isAllowed ? `ALLOWED (${appConfig.gradeBSizeMultiplier || 0.75}x)` : 'BLOCKED (Grade B Disabled)';
+          } else {
+            qualityScore.grade = 'C';
+            qualityScore.gradeTitle = `GRADE C • ${Math.round(qualityScore.totalScore)}/100`;
+            qualityScore.isAllowed = false;
+            qualityScore.statusLabel = 'BLOCKED (Score < 65)';
+          }
+
+          qualityScore.breakdown.push({
+            name: 'Indicator S/R Confluence',
+            weight: 10,
+            rawScore: Math.min(100, Math.max(0, 50 + conf.netScore * 5)),
+            weightedScore: conf.netScore,
+            note: conf.notes.join(' • ') || 'Level & Trendline structure confluence'
+          });
+        }
+      }
+    }
 
     finalSignal = DisciplineStateMachine.evaluateDisciplineGuard({
       rawSignal: finalSignal,
@@ -750,6 +823,7 @@ async function dispatchOverlayToChart(signalData, driverData, keyLevels = {}, sr
             label: `${cd.label} (${cd.remainingFormatted})`
           },
           scalpSetup: latestScalpSetup ? { ...latestScalpSetup, isEnabled: ScalpPanel.isEnabled } : null,
+          indicators: latestIndicatorState,
           timestamp: Date.now()
         }
       }
@@ -1321,6 +1395,25 @@ function initSettingsForm() {
   if (scalpPresetInput) scalpPresetInput.value = appConfig.scalpPreset || 'CONSERVATIVE';
   if (scalpLatencyInput) scalpLatencyInput.value = appConfig.scalpMaxLatency || 1500;
 
+  // Technical Indicators Settings
+  const indMasterInput = document.getElementById('cfg-indicators-master');
+  const indNsdtInput = document.getElementById('cfg-nsdt-enabled');
+  const indTlInput = document.getElementById('cfg-trendline-enabled');
+  const indL1Input = document.getElementById('cfg-nsdt-l1');
+  const indL2Input = document.getElementById('cfg-nsdt-l2');
+  const indL3Input = document.getElementById('cfg-nsdt-l3');
+  const indClusterInput = document.getElementById('cfg-cluster-band');
+  const indTlBufferInput = document.getElementById('cfg-tl-buffer');
+
+  if (indMasterInput) indMasterInput.checked = indicatorManager?.config.masterEnabled || false;
+  if (indNsdtInput) indNsdtInput.checked = indicatorManager?.config.nsdtConfig.isEnabled || false;
+  if (indTlInput) indTlInput.checked = indicatorManager?.config.trendlineConfig.isEnabled || false;
+  if (indL1Input) indL1Input.value = indicatorManager?.config.nsdtConfig.l1 || 5;
+  if (indL2Input) indL2Input.value = indicatorManager?.config.nsdtConfig.l2 || 10;
+  if (indL3Input) indL3Input.value = indicatorManager?.config.nsdtConfig.l3 || 20;
+  if (indClusterInput) indClusterInput.value = indicatorManager?.config.nsdtConfig.clusterBandAtr || 0.15;
+  if (indTlBufferInput) indTlBufferInput.value = indicatorManager?.config.trendlineConfig.breakoutBufferAtr || 0.1;
+
   toggleKey?.addEventListener('click', () => {
     keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
   });
@@ -1349,11 +1442,32 @@ function initSettingsForm() {
       ts_scalp_module_enabled: scalpEnabledInput ? scalpEnabledInput.checked : false,
       ts_scalp_preset: scalpPresetInput ? scalpPresetInput.value : 'CONSERVATIVE',
       ts_scalp_max_latency: parseInt(scalpLatencyInput?.value, 10) || 1500,
+      ts_indicators_master: indMasterInput ? indMasterInput.checked : false,
+      ts_nsdt_enabled: indNsdtInput ? indNsdtInput.checked : false,
+      ts_trendline_enabled: indTlInput ? indTlInput.checked : false,
+      ts_nsdt_l1: parseInt(indL1Input?.value, 10) || 5,
+      ts_nsdt_l2: parseInt(indL2Input?.value, 10) || 10,
+      ts_nsdt_l3: parseInt(indL3Input?.value, 10) || 20,
+      ts_cluster_band: parseFloat(indClusterInput?.value) || 0.15,
+      ts_tl_buffer: parseFloat(indTlBufferInput?.value) || 0.1,
       ts_gemini_api_key: keyInput.value.trim()
     };
 
     chrome.storage.local.set(updated);
     Object.assign(appConfig, updated);
+
+    // Sync IndicatorManager state
+    if (indicatorManager) {
+      indicatorManager.setMasterEnabled(updated.ts_indicators_master);
+      indicatorManager.setNSDTEnabled(updated.ts_nsdt_enabled);
+      indicatorManager.setTrendlineEnabled(updated.ts_trendline_enabled);
+      indicatorManager.config.nsdtConfig.l1 = updated.ts_nsdt_l1;
+      indicatorManager.config.nsdtConfig.l2 = updated.ts_nsdt_l2;
+      indicatorManager.config.nsdtConfig.l3 = updated.ts_nsdt_l3;
+      indicatorManager.config.nsdtConfig.clusterBandAtr = updated.ts_cluster_band;
+      indicatorManager.config.trendlineConfig.breakoutBufferAtr = updated.ts_tl_buffer;
+      indicatorTogglesUI?.renderState(indicatorManager.getState());
+    }
 
     // Sync ScalpPanel state
     ScalpPanel.isEnabled = updated.ts_scalp_module_enabled;

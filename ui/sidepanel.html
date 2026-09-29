@@ -430,6 +430,58 @@
           </div>
         </div>
 
+        <!-- TECHNICAL INDICATOR ENGINES (NSDT AUTO S/R & PIVOT TRENDLINES 30/30) -->
+        <div class="card-section indicator-modules-card" id="indicators-module-card" style="border: 1px solid rgba(0, 212, 255, 0.35); background: rgba(0, 212, 255, 0.04); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+          <!-- Top Row: Master Switch & Heading -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:12px; font-weight:800; color:#00D4FF;">📐 TECHNICAL INDICATORS</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label style="display:flex; align-items:center; gap:4px; font-size:10px; font-weight:700; color:#00D4FF; cursor:pointer;">
+                <input type="checkbox" id="chk-indicators-master" style="cursor:pointer; width:14px; height:14px;">
+                <span>MASTER ON</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Module 1: NSDT Auto S/R Levels -->
+          <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label style="display:flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:#FBBF24; cursor:pointer;">
+                  <input type="checkbox" id="chk-nsdt-enabled" style="cursor:pointer; width:13px; height:13px;">
+                  <span>NSDT Auto S/R Levels</span>
+                </label>
+                <span style="font-size:8.5px; color:#64748B;">(3-Tier Pivots L1=5, L2=10, L3=20)</span>
+              </div>
+              <span id="nsdt-status-badge" class="status-tag" style="font-size:9.5px; font-weight:800; padding:1px 6px; border-radius:3px; background:rgba(148,163,184,0.12); color:#94A3B8; border:1px solid #64748B;">OFF</span>
+            </div>
+            <div id="nsdt-details-card" style="display:none;"></div>
+            <div style="font-size:9px; color:#64748B; margin-top:3px;">
+              <em>Levels confirm L bars after pivot. Author: NorthStarDayTrading. Used as confluence, not standalone signals.</em>
+            </div>
+          </div>
+
+          <!-- Module 2: Pivot Trendlines 30/30 -->
+          <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label style="display:flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:#38BDF8; cursor:pointer;">
+                  <input type="checkbox" id="chk-trendline-enabled" style="cursor:pointer; width:13px; height:13px;">
+                  <span>Pivot Trendlines 30/30</span>
+                </label>
+                <span style="font-size:8.5px; color:#64748B;">(30L / 30R Pivots)</span>
+              </div>
+              <span id="trendline-status-badge" class="status-tag" style="font-size:9.5px; font-weight:800; padding:1px 6px; border-radius:3px; background:rgba(148,163,184,0.12); color:#94A3B8; border:1px solid #64748B;">OFF</span>
+            </div>
+            <div id="trendline-details-card" style="display:none;"></div>
+            <div style="font-size:9px; color:#FBBF24; margin-top:3px;">
+              ⚠️ <em>Notice: 30-bar confirmation lag by design. Invalidation on candle close only (never on wicks).</em>
+            </div>
+          </div>
+        </div>
+
         <!-- Pattern at Key Level Card -->
         <div class="card-section">
           <div class="section-title">
@@ -1052,6 +1104,57 @@
               <input type="number" id="cfg-scalp-max-latency" value="1500" step="100" min="500" max="3000">
               <span class="field-hint">Auto-pauses scalping if WebSocket latency exceeds this threshold (default 1500ms).</span>
             </div>
+          </div>
+
+          <!-- Technical Indicators Settings (NSDT Auto S/R & Pivot Trendlines 30/30) -->
+          <div class="card-section" style="border:1px solid rgba(0, 212, 255, 0.35); background:rgba(0, 212, 255, 0.04); border-radius:6px; padding:8px; margin-bottom:12px;">
+            <div style="font-size:11px; font-weight:800; color:#00D4FF; margin-bottom:6px;">📐 Technical Indicators Settings</div>
+            
+            <div class="form-row" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+              <div>
+                <label for="cfg-indicators-master" style="margin-bottom:2px; font-size:11px;">Master Indicators Switch</label>
+                <span class="field-hint" style="display:block;">Controls both NSDT S/R &amp; Trendline 30/30 engines.</span>
+              </div>
+              <input type="checkbox" id="cfg-indicators-master" style="width:18px; height:18px;">
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); padding:4px 6px; border-radius:4px;">
+                <label for="cfg-nsdt-enabled" style="font-size:10px; color:#FBBF24;">NSDT Auto S/R</label>
+                <input type="checkbox" id="cfg-nsdt-enabled" style="width:15px; height:15px;">
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); padding:4px 6px; border-radius:4px;">
+                <label for="cfg-trendline-enabled" style="font-size:10px; color:#38BDF8;">Trendlines 30/30</label>
+                <input type="checkbox" id="cfg-trendline-enabled" style="width:15px; height:15px;">
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:6px;">
+              <div>
+                <label for="cfg-nsdt-l1" style="font-size:9.5px;">NSDT L1</label>
+                <input type="number" id="cfg-nsdt-l1" value="5" min="2" max="20" style="width:100%;">
+              </div>
+              <div>
+                <label for="cfg-nsdt-l2" style="font-size:9.5px;">NSDT L2</label>
+                <input type="number" id="cfg-nsdt-l2" value="10" min="5" max="50" style="width:100%;">
+              </div>
+              <div>
+                <label for="cfg-nsdt-l3" style="font-size:9.5px;">NSDT L3</label>
+                <input type="number" id="cfg-nsdt-l3" value="20" min="10" max="100" style="width:100%;">
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <label for="cfg-cluster-band" style="font-size:9.5px;">Cluster Band (x ATR)</label>
+                <input type="number" id="cfg-cluster-band" value="0.15" step="0.05" min="0.05" max="0.5" style="width:100%;">
+              </div>
+              <div>
+                <label for="cfg-tl-buffer" style="font-size:9.5px;">Breakout Buffer (x ATR)</label>
+                <input type="number" id="cfg-tl-buffer" value="0.1" step="0.05" min="0.0" max="0.5" style="width:100%;">
+              </div>
+            </div>
+            <span class="field-hint" style="margin-top:4px;">Zero footprint when disabled. Data gate requires at least 500 bars for calculation.</span>
           </div>
 
           <div class="form-row">

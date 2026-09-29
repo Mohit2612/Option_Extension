@@ -288,12 +288,20 @@
       data.scalpSetup?.entryPrice,
       data.scalpSetup?.stopLoss,
       data.scalpSetup?.target1
-    ].filter((p) => typeof p === 'number' && !isNaN(p));
+    ];
 
-    if (prices.length === 0) return;
+    if (data.indicators && data.indicators.masterEnabled && Array.isArray(data.indicators.drawings)) {
+      data.indicators.drawings.forEach((d) => {
+        if (typeof d.y1 === 'number') prices.push(d.y1);
+        if (typeof d.y2 === 'number') prices.push(d.y2);
+      });
+    }
 
-    const minPx = Math.min(...prices) - 30;
-    const maxPx = Math.max(...prices) + 30;
+    const validPrices = prices.filter((p) => typeof p === 'number' && !isNaN(p));
+    if (validPrices.length === 0) return;
+
+    const minPx = Math.min(...validPrices) - 30;
+    const maxPx = Math.max(...validPrices) + 30;
     const range = Math.max(10, maxPx - minPx);
 
     const getY = (p) => {
@@ -379,6 +387,82 @@
 
         drawHorizontalLine(svg, rect.width, (yTop + yBottom) / 2, r.state === 'SPIKE_RISK_HIGH' ? '#FF3B69' : '#FBBF24', `SPIKE WATCH ZONE (${r.compressionPts} pts)`, 'dashed');
       }
+    }
+
+    // 6. Technical Indicators (NSDT Auto S/R & Pivot Trendlines 30/30)
+    if (data.indicators && data.indicators.masterEnabled && Array.isArray(data.indicators.drawings)) {
+      const drawings = data.indicators.drawings;
+
+      // Draw Cluster Zones
+      drawings.filter((d) => d.type === 'ZONE_BOX' && d.y2 !== undefined).forEach((d) => {
+        const yTop = getY(d.y1);
+        const yBottom = getY(d.y2);
+        const boxHeight = Math.max(3, yBottom - yTop);
+
+        const rectBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rectBox.setAttribute('x', '60');
+        rectBox.setAttribute('y', yTop.toString());
+        rectBox.setAttribute('width', (rect.width - 130).toString());
+        rectBox.setAttribute('height', boxHeight.toString());
+        rectBox.setAttribute('fill', d.color);
+        rectBox.setAttribute('stroke', '#FBBF24');
+        rectBox.setAttribute('stroke-width', '1');
+        rectBox.setAttribute('stroke-dasharray', '4 4');
+        svg.appendChild(rectBox);
+      });
+
+      // Draw NSDT Lines
+      drawings.filter((d) => d.type === 'HORIZONTAL_LINE').forEach((d) => {
+        const y = getY(d.y1);
+        drawHorizontalLine(svg, rect.width, y, d.color, d.label, d.style);
+      });
+
+      // Draw 30/30 Trendlines
+      drawings.filter((d) => d.type === 'TRENDLINE' && d.y2 !== undefined).forEach((d) => {
+        const yStart = getY(d.y1);
+        const yEnd = getY(d.y2);
+        const xStart = 80;
+        const xEnd = rect.width - 80;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', xStart.toString());
+        line.setAttribute('y1', yStart.toString());
+        line.setAttribute('x2', xEnd.toString());
+        line.setAttribute('y2', yEnd.toString());
+        line.setAttribute('stroke', d.color);
+        line.setAttribute('stroke-width', (d.width || 2).toString());
+        if (d.style === 'dashed') line.setAttribute('stroke-dasharray', '6 4');
+        svg.appendChild(line);
+
+        // Trendline Label Badge at termination
+        if (d.label) {
+          const badgeW = d.label.length * 6.5 + 14;
+          const badgeX = xEnd - badgeW;
+          const badgeY = yEnd - 10;
+
+          const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          bg.setAttribute('x', badgeX.toString());
+          bg.setAttribute('y', badgeY.toString());
+          bg.setAttribute('width', badgeW.toString());
+          bg.setAttribute('height', '20');
+          bg.setAttribute('rx', '4');
+          bg.setAttribute('fill', '#0B0F19');
+          bg.setAttribute('stroke', d.color);
+          bg.setAttribute('stroke-width', '1');
+          svg.appendChild(bg);
+
+          const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          txt.setAttribute('x', (badgeX + badgeW / 2).toString());
+          txt.setAttribute('y', (badgeY + 14).toString());
+          txt.setAttribute('text-anchor', 'middle');
+          txt.setAttribute('fill', d.color);
+          txt.setAttribute('font-size', '10');
+          txt.setAttribute('font-weight', '700');
+          txt.setAttribute('font-family', 'Inter, system-ui, sans-serif');
+          txt.textContent = d.label;
+          svg.appendChild(txt);
+        }
+      });
     }
 
     root.appendChild(svg);
