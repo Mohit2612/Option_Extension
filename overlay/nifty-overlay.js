@@ -29,14 +29,12 @@ export const NiftyOverlayRenderer = {
     const existingWarning = document.getElementById('tradesight-symbol-warning');
     if (existingWarning) existingWarning.remove();
 
-    // 1. Symbol Guard: Check if active chart is NIFTY
-    const isNifty = this.isNiftySymbol(symbol);
-    if (!isNifty) {
-      this.renderSymbolWarning(containerElement, symbol);
-    }
+    // 1. Symbol Extraction
+    const activeSymbol = (symbol || 'CHART').toUpperCase();
+    const isNifty = this.isNiftySymbol(activeSymbol);
 
     // 2. Render On-Chart Live Institutional HUD
-    this.renderLiveHud(containerElement, signalData, driverData, isNifty);
+    this.renderLiveHud(containerElement, signalData, driverData, activeSymbol, isNifty);
 
     // 3. Audio Chime if fresh valid signal
     if (signalData.signal && signalData.signal !== 'WAIT') {
@@ -53,19 +51,7 @@ export const NiftyOverlayRenderer = {
     return clean.includes('NIFTY') || clean.includes('CNXNIFTY') || clean.includes('INDIA50');
   },
 
-  renderSymbolWarning(container, sym) {
-    const banner = document.createElement('div');
-    banner.id = 'tradesight-symbol-warning';
-    banner.className = 'tradesight-symbol-warning';
-    banner.innerHTML = `
-      <div class="warning-pill">
-        ⚠️ <strong>Non-Nifty Asset: "${sym}"</strong> — TradeSight AI is engineered exclusively for <strong>NIFTY 50</strong>. Switch to NIFTY chart for calibrated signals.
-      </div>
-    `;
-    container.appendChild(banner);
-  },
-
-  renderLiveHud(container, signalData, driverData, isNifty) {
+  renderLiveHud(container, signalData, driverData, activeSymbol, isNifty) {
     const hud = document.createElement('div');
     hud.id = 'tradesight-nifty-live-hud';
     hud.className = 'tradesight-nifty-hud';
@@ -73,43 +59,43 @@ export const NiftyOverlayRenderer = {
     const signal = signalData.signal || 'WAIT';
     const confidence = signalData.confidence || 0;
     const score = driverData.pressureScore !== undefined ? driverData.pressureScore : 0;
-    const vixText = driverData.vixAnalysis?.details || 'VIX: 13.5';
-    const regimeLabel = signalData.regime?.label || 'Evaluation Active';
-    const strategyName = signalData.strategyName || 'Rule Engine Standing By';
+    const regimeLabel = signalData.regime?.label || '1-Month S/R Verified Scan';
+    const patternName = signalData.pattern?.name || signalData.patternName || 'Candle Scan';
+    const srLocation = signalData.srLocation || (signalData.srLevels ? `Sup: ${signalData.srLevels.majorSupport?.price} | Res: ${signalData.srLevels.majorResistance?.price}` : '1-Month S/R Active');
 
     let signalColorClass = 'hud-signal-wait';
     if (signal === 'BUY') signalColorClass = 'hud-signal-buy';
     if (signal === 'SELL') signalColorClass = 'hud-signal-sell';
 
     const heroStatus = signalData.heroZeroStatus || { armed: false, locked: false, text: 'Standby' };
-    const countdown = signalData.countdown || { label: 'Next Window: 09:30 ORB' };
+    const countdown = signalData.countdown || { label: 'Active Pattern Scanner' };
 
     hud.innerHTML = `
       <div class="nifty-hud-header">
         <div class="hud-brand">
-          <span class="hud-badge">NIFTY 50</span>
+          <span class="hud-badge">${activeSymbol}</span>
           <span class="hud-regime">${regimeLabel}</span>
         </div>
         <div class="hud-pressure ${score > 15 ? 'bullish' : score < -15 ? 'bearish' : 'neutral'}">
-          Pressure: <strong>${score > 0 ? '+' : ''}${score}</strong>
+          ${isNifty ? `Pressure: <strong>${score > 0 ? '+' : ''}${score}</strong>` : `S/R Verified`}
         </div>
       </div>
 
       <div class="nifty-hud-body">
         <div class="hud-next-move ${signalColorClass}">
-          <div class="move-label">NEXT MOVE</div>
+          <div class="move-label">ACTION</div>
           <div class="move-action">${signal}</div>
-          <div class="move-conf">${confidence > 0 ? confidence + '% Conviction' : 'Cash is a Position'}</div>
+          <div class="move-conf">${confidence > 0 ? confidence + '% Conviction' : 'Wait for S/R'}</div>
         </div>
 
         <div class="hud-meta-col">
           <div class="hud-metric">
-            <span class="lbl">STRATEGY</span>
-            <span class="val">${strategyName}</span>
+            <span class="lbl">PATTERN</span>
+            <span class="val" style="color:#00D4FF; font-weight:700;">${patternName}</span>
           </div>
           <div class="hud-metric">
-            <span class="lbl">VIX STATUS</span>
-            <span class="val">${vixText}</span>
+            <span class="lbl">1M S/R CONFLUENCE</span>
+            <span class="val" style="color:#FBBF24;">${srLocation}</span>
           </div>
           ${signalData.levels ? `
           <div class="hud-metric levels-metric">

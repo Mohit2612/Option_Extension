@@ -10,6 +10,7 @@ import { NiftyJournalEngine } from '../journal/nifty-journal.js';
 import { SessionClock } from '../services/sessionClock.js';
 import { ExpiryCalendar } from '../services/expiryCalendar.js';
 import { RiskManager } from '../services/riskManager.js';
+import { SupportResistanceEngine } from '../services/supportResistanceEngine.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -111,18 +112,10 @@ function updateChartMetaDisplay(meta) {
   const symEl = document.getElementById('meta-symbol');
   const tfEl = document.getElementById('meta-timeframe');
   const pxEl = document.getElementById('meta-price');
-  const warnEl = document.getElementById('symbol-warning-card');
 
-  if (symEl) symEl.textContent = meta.symbol || 'NIFTY 50';
-  if (tfEl) tfEl.textContent = meta.timeframe || '5m';
+  if (symEl) symEl.textContent = (meta.symbol || 'ACTIVE CHART').toUpperCase();
+  if (tfEl) tfEl.textContent = meta.timeframe || '15m';
   if (pxEl) pxEl.textContent = meta.currentPrice ? meta.currentPrice.toFixed(2) : '--.--';
-
-  // Check if Nifty
-  const isNifty = (meta.symbol || '').toUpperCase().includes('NIFTY');
-  if (warnEl) {
-    if (!isNifty && meta.symbol !== 'UNKNOWN') warnEl.classList.remove('hidden');
-    else warnEl.classList.add('hidden');
-  }
 }
 
 /* ================= SCAN & EVALUATE NEXT MOVE ================= */
@@ -142,7 +135,7 @@ function initScanControls() {
   logBtn?.addEventListener('click', async () => {
     if (latestSignal && latestSignal.signal !== 'WAIT') {
       await NiftyJournalEngine.logSignal(latestSignal, latestDrivers, currentChartMeta);
-      alert(`Signal logged to Journal: NIFTY ${latestSignal.signal} @ ${latestSignal.levels?.entryPrice}`);
+      alert(`Signal logged to Journal: ${currentChartMeta?.symbol || 'NIFTY'} ${latestSignal.signal} @ ${latestSignal.levels?.entryPrice}`);
       refreshJournalDashboard();
     } else {
       alert('Cannot log WAIT. Journal only tracks actionable setups.');
@@ -153,70 +146,112 @@ function initScanControls() {
 async function runNiftyScan() {
   const laser = document.getElementById('scanner-laser');
   laser?.classList.add('active');
-  setSystemStatus('Evaluating...', 'scanning');
+  setSystemStatus('Scanning Chart...', 'scanning');
 
   try {
-    // 1. Probe chart metadata & live price
+    // 1. Probe chart metadata & live price from any TradingView tab
     await probeTradingViewChart();
+    const activeSymbol = (currentChartMeta?.symbol || 'NIFTY 50').toUpperCase();
     const currentPrice = currentChartMeta?.currentPrice || 24120;
+    const isNifty = activeSymbol.includes('NIFTY') || activeSymbol.includes('CNXNIFTY');
 
-    // 2. Run Market Driver Engine
-    const driverData = await DriverEngine.getMarketPressure(currentPrice);
-    latestDrivers = driverData;
+    // 2. Run 1-Month Support & Resistance Verification Engine
+    const srData = SupportResistanceEngine.calculateOneMonthSR(activeSymbol, currentPrice);
 
-    // 3. Synthesize Mock/Live Candles for Strategy & Pattern Engine
-    // In production, candles are pulled from TradingView DOM or history
-    const candles = generateWorkingCandles(currentPrice);
-
-    // 4. Construct Key Levels (VWAP, PDH, PDL, ORH, ORL)
+    // 3. Construct Key Levels with 1-Month S/R
     const keyLevels = {
       vwap: currentPrice - 8,
-      pdh: currentPrice + 85,
-      pdl: currentPrice - 110,
-      pdc: currentPrice - 20,
-      orh: currentPrice + 45,
-      orl: currentPrice - 40,
+      pdh: Math.round((srData.pivot + (srData.monthRange * 0.2)) * 10) / 10,
+      pdl: Math.round((srData.pivot - (srData.monthRange * 0.2)) * 10) / 10,
+      pdc: currentPrice - 10,
+      orh: currentPrice + Math.round(srData.monthRange * 0.05),
+      orl: currentPrice - Math.round(srData.monthRange * 0.05),
+      monthHigh: srData.monthHigh,
+      monthLow: srData.monthLow,
+      monthPivot: srData.pivot,
+      majorResistance: srData.majorResistance.price,
+      majorSupport: srData.majorSupport.price,
       maxCallOi: Math.round((currentPrice + 200) / 50) * 50,
       maxPutOi: Math.round((currentPrice - 150) / 50) * 50,
       maxPain: Math.round(currentPrice / 50) * 50
     };
 
-    // 5. Evaluate Candlestick Pattern at Key Level
+    // 4. Synthesize Working Candles (incorporating live OHLC from TV legend if available)
+    const candles = generateWorkingCandles(currentPrice, currentChartMeta?.candleOHLC);
+
+    // 5. Evaluate Candlestick Pattern on Active Chart
     const detectedPattern = PatternEngine.evaluateLatestCandle(candles, keyLevels);
 
-    // 6. Run Institutional Strategy Engine
-    const signalResult = StrategyEngine.evaluateSetup({
-      candles,
-      keyLevels,
-      driverData,
-      dailyLossCount,
-      userConfig: appConfig,
-      currentTime: new Date()
-    });
+    // 6. Verify Trade Confirmation with 1-Month S/R
+    const srConfirmation = SupportResistanceEngine.verifyTradeWithSR(detectedPattern, currentPrice, srData);
 
-    latestSignal = {
-      ...signalResult,
-      pattern: detectedPattern,
-      levels: signalResult.entryPrice ? {
-        entryPrice: signalResult.entryPrice,
-        stopLoss: signalResult.stopLoss,
-        target1: signalResult.target1,
-        target2: signalResult.target2
-      } : null
-    };
+    // 7. Run Driver Engine
+    const driverData = await DriverEngine.getMarketPressure(currentPrice);
+    latestDrivers = driverData;
 
-    // 7. Render UI
-    renderNextMoveHero(latestSignal, driverData, detectedPattern);
+    // 8. Synthesize Final Signal based on S/R Verification & Pattern
+    let finalSignal = null;
+    if (isNifty) {
+      const stratResult = StrategyEngine.evaluateSetup({
+        candles, keyLevels, driverData, dailyLossCount, userConfig: appConfig, currentTime: new Date()
+      });
 
-    // 8. Auto-Draw on TradingView Overlay
-    dispatchOverlayToChart(latestSignal, driverData, keyLevels);
+      if (srConfirmation.confirmed) {
+        finalSignal = {
+          ...srConfirmation,
+          strategyName: srConfirmation.title,
+          setupRationale: srConfirmation.rationale,
+          pattern: detectedPattern,
+          patternName: detectedPattern ? detectedPattern.name : null,
+          regime: stratResult.regime || { label: '1-Month S/R Floor/Ceiling Alignment' }
+        };
+      } else if (stratResult.signal !== 'WAIT') {
+        finalSignal = {
+          ...stratResult,
+          pattern: detectedPattern,
+          patternName: detectedPattern ? detectedPattern.name : null,
+          srLocation: srConfirmation.srLocation
+        };
+      } else {
+        finalSignal = {
+          ...stratResult,
+          pattern: detectedPattern,
+          patternName: detectedPattern ? detectedPattern.name : null,
+          setupRationale: srConfirmation.rationale,
+          srLocation: srConfirmation.srLocation
+        };
+      }
+    } else {
+      // Any other Asset (BankNifty, Stocks, Crypto, Forex, etc.)
+      finalSignal = {
+        signal: srConfirmation.signal,
+        action: srConfirmation.action,
+        confidence: srConfirmation.confidence || 0,
+        strategyName: srConfirmation.title,
+        setupRationale: srConfirmation.rationale,
+        levels: srConfirmation.levels,
+        invalidation: srConfirmation.invalidation || 'Awaiting 1-Month S/R test.',
+        pattern: detectedPattern,
+        patternName: detectedPattern ? detectedPattern.name : null,
+        srLocation: srConfirmation.srLocation,
+        regime: { label: `${activeSymbol} 1M S/R Structure` }
+      };
+    }
 
-    // 9. Update time and hero-zero badges
+    latestSignal = finalSignal;
+
+    // 9. Render Sidepanel UI
+    renderNextMoveHero(latestSignal, driverData, detectedPattern, srData, srConfirmation);
+
+    // 10. Auto-Draw on TradingView Overlay
+    dispatchOverlayToChart(latestSignal, driverData, keyLevels, srData);
+
+    // 11. Update time and hero-zero badges
     updateSessionBadges(latestSignal);
 
     setSystemStatus('Ready', 'ready');
   } catch (err) {
-    Logger.error('Nifty scan failed:', err);
+    Logger.error('Chart scan failed:', err);
     setSystemStatus('Error', 'error');
   } finally {
     laser?.classList.remove('active');
@@ -245,7 +280,7 @@ function updateSessionBadges(signalData = null) {
       badge.textContent = '⏳ Expiry Active (Window 13:45)';
     } else {
       badge.className = 'hero-zero-badge standby';
-      badge.textContent = '⏳ HZ Standby (Thurs Expiry)';
+      badge.textContent = '📊 1M S/R Active';
     }
   }
 
@@ -255,14 +290,12 @@ function updateSessionBadges(signalData = null) {
   }
 }
 
-function renderNextMoveHero(signalData, driverData, pattern) {
+function renderNextMoveHero(signalData, driverData, pattern, srData = null, srConfirmation = null) {
   const signalBadge = document.getElementById('hero-signal');
   const stratEl = document.getElementById('hero-strategy');
   const confEl = document.getElementById('hero-confidence');
   const regimeEl = document.getElementById('hero-regime');
   const rationaleEl = document.getElementById('hero-rationale');
-  const pressureScoreEl = document.getElementById('hero-pressure-score');
-  const pressureMarker = document.getElementById('pressure-marker');
 
   const signal = signalData.signal || 'WAIT';
   signalBadge.textContent = signal;
@@ -276,24 +309,33 @@ function renderNextMoveHero(signalData, driverData, pattern) {
   regimeEl.textContent = `Regime: ${signalData.regime?.label || 'Neutral'}`;
   rationaleEl.textContent = signalData.setupRationale || signalData.filterReason || 'Standing by for high-probability structural confluence.';
 
-  // Pressure Score Meter
-  const score = driverData.pressureScore || 0;
-  pressureScoreEl.textContent = `${score > 0 ? '+' : ''}${score} / 100`;
-  const normalizedPct = ((score + 100) / 200) * 100;
-  if (pressureMarker) pressureMarker.style.left = `${normalizedPct}%`;
+  // 1-Month S/R Card fields
+  if (srData) {
+    const mHigh = document.getElementById('sr-month-high');
+    const mPivot = document.getElementById('sr-month-pivot');
+    const mLow = document.getElementById('sr-month-low');
+    const resVal = document.getElementById('sr-res-val');
+    const supVal = document.getElementById('sr-sup-val');
+    const confStatus = document.getElementById('sr-confluence-status');
 
-  // Top Supporting & Opposing Drivers
-  const supList = document.getElementById('hero-supporting-drivers');
-  const oppList = document.getElementById('hero-opposing-drivers');
-  if (supList) {
-    supList.innerHTML = driverData.topSupportingDrivers?.length > 0
-      ? driverData.topSupportingDrivers.map((d) => `<li>• ${d.name} (${d.details})</li>`).join('')
-      : '<li>No strong bullish drivers active.</li>';
-  }
-  if (oppList) {
-    oppList.innerHTML = driverData.topOpposingDrivers?.length > 0
-      ? driverData.topOpposingDrivers.map((d) => `<li>• ${d.name} (${d.details})</li>`).join('')
-      : '<li>No strong bearish drivers active.</li>';
+    if (mHigh) mHigh.textContent = srData.monthHigh;
+    if (mPivot) mPivot.textContent = srData.pivot;
+    if (mLow) mLow.textContent = srData.monthLow;
+    if (resVal) resVal.textContent = `${srData.majorResistance.price} [Tested ${srData.majorResistance.testedCount}x]`;
+    if (supVal) supVal.textContent = `${srData.majorSupport.price} [Tested ${srData.majorSupport.testedCount}x]`;
+
+    if (confStatus && srConfirmation) {
+      confStatus.textContent = srConfirmation.srLocation;
+      if (srConfirmation.confirmed) {
+        confStatus.style.background = 'rgba(0, 230, 118, 0.2)';
+        confStatus.style.color = '#00E676';
+        confStatus.style.borderColor = '#00E676';
+      } else {
+        confStatus.style.background = 'rgba(255, 183, 3, 0.15)';
+        confStatus.style.color = '#FFB703';
+        confStatus.style.borderColor = 'rgba(255, 183, 3, 0.3)';
+      }
+    }
   }
 
   // Pattern Details
@@ -304,7 +346,7 @@ function renderNextMoveHero(signalData, driverData, pattern) {
   if (pattern) {
     patName.textContent = `${pattern.name} (${pattern.direction})`;
     patDesc.textContent = pattern.description;
-    patLoc.textContent = pattern.isActionable ? `At ${pattern.locationTag}` : 'Mid-Range (Filtered)';
+    patLoc.textContent = srConfirmation?.srLocation || (pattern.isActionable ? `At ${pattern.locationTag}` : 'Mid-Range (Filtered)');
   } else {
     patName.textContent = 'No Actionable Pattern';
     patDesc.textContent = 'Candlesticks without location confluence are ignored.';
@@ -316,23 +358,11 @@ function renderNextMoveHero(signalData, driverData, pattern) {
   document.getElementById('hero-level-sl').textContent = signalData.levels?.stopLoss || '--';
   document.getElementById('hero-level-tp1').textContent = signalData.levels?.target1 || '--';
   document.getElementById('hero-level-tp2').textContent = signalData.levels?.target2 || '--';
-  document.getElementById('hero-trade-rr').textContent = signalData.riskRewardRatio ? `R:R ${signalData.riskRewardRatio}` : 'Min 1:2.0';
+  document.getElementById('hero-trade-rr').textContent = signalData.levels?.riskRewardRatio ? `R:R ${signalData.levels.riskRewardRatio}` : 'Min 1:2.0';
   document.getElementById('hero-level-invalidation').textContent = signalData.invalidation || 'Wait for setup.';
-
-  // Options Suggestion
-  const optBox = document.getElementById('hero-options-box');
-  const optTitle = document.getElementById('hero-option-strike');
-  const optNote = document.getElementById('hero-option-note');
-  if (signalData.optionsSuggestion) {
-    optTitle.textContent = signalData.optionsSuggestion.structure;
-    optNote.textContent = `${signalData.optionsSuggestion.rationale} ${signalData.optionsSuggestion.approxPremiumRisk ? '• ' + signalData.optionsSuggestion.approxPremiumRisk : ''}`;
-    optBox.classList.remove('hidden');
-  } else {
-    optBox.classList.add('hidden');
-  }
 }
 
-async function dispatchOverlayToChart(signalData, driverData, keyLevels = {}) {
+async function dispatchOverlayToChart(signalData, driverData, keyLevels = {}, srData = {}) {
   try {
     const now = new Date();
     const isExp = ExpiryCalendar.isExpiryDay(now);
@@ -345,10 +375,13 @@ async function dispatchOverlayToChart(signalData, driverData, keyLevels = {}) {
       payload: {
         action: 'RENDER_OVERLAY',
         payload: {
-          symbol: currentChartMeta?.symbol || 'NIFTY 50',
+          symbol: currentChartMeta?.symbol || 'CHART',
           signal: signalData.signal,
           confidence: signalData.confidence,
           strategyName: signalData.strategyName,
+          patternName: signalData.patternName || signalData.pattern?.name,
+          srLocation: signalData.srLocation,
+          srLevels: srData,
           pressureScore: driverData?.pressureScore || 0,
           vixSummary: driverData?.vixAnalysis?.details || '',
           levels: signalData.levels,

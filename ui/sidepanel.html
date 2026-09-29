@@ -74,12 +74,12 @@
         <!-- Live Nifty Meta Bar -->
         <div class="chart-meta-bar">
           <div class="meta-item">
-            <span class="meta-lbl">INDEX</span>
-            <span class="meta-val" id="meta-symbol">NIFTY 50</span>
+            <span class="meta-lbl">ASSET / SYMBOL</span>
+            <span class="meta-val" id="meta-symbol">ACTIVE CHART</span>
           </div>
           <div class="meta-item">
             <span class="meta-lbl">INTERVAL</span>
-            <span class="meta-val" id="meta-timeframe">5m</span>
+            <span class="meta-val" id="meta-timeframe">15m</span>
           </div>
           <div class="meta-item">
             <span class="meta-lbl">LIVE PRICE</span>
@@ -87,16 +87,11 @@
           </div>
         </div>
 
-        <!-- Symbol Warning (if non-nifty chart is open) -->
-        <div id="symbol-warning-card" class="notice-card warning-notice hidden">
-          ⚠️ <strong>Non-Nifty Chart Detected:</strong> TradeSight AI is calibrated exclusively for <strong>NIFTY 50</strong>. Switch to NIFTY on TradingView for calibrated signals.
-        </div>
-
         <!-- Scan Button Container -->
         <div class="scan-action-box">
           <button id="btn-scan-nifty" class="btn-scan-primary">
             <span class="btn-icon">⚡</span>
-            <span class="btn-text">EVALUATE NIFTY NEXT MOVE</span>
+            <span class="btn-text">SCAN PATTERN & 1M S/R CONFLUENCE</span>
           </button>
           <div class="scanner-laser" id="scanner-laser"></div>
         </div>
@@ -106,53 +101,56 @@
           <div class="hero-top-row">
             <div class="hero-signal-badge hud-signal-wait" id="hero-signal">WAIT</div>
             <div class="hero-meta">
-              <span class="hero-strategy" id="hero-strategy">Evaluating Market Regime...</span>
-              <span class="hero-conf" id="hero-confidence">0% Confidence</span>
+              <span class="hero-strategy" id="hero-strategy">Scanning Candlestick Pattern...</span>
+              <span class="hero-conf" id="hero-confidence">0% Conviction</span>
             </div>
           </div>
 
           <div class="market-regime-bar" id="hero-regime">
-            Regime: Scanning Active Candles...
+            Regime: Scanning Active Candles & S/R...
           </div>
 
           <!-- Time Window & Hero-Zero Badges -->
           <div class="hud-extra-row" style="margin-top:6px; padding-top:4px;">
-            <span class="hero-zero-badge standby" id="hero-zero-status-badge">⏳ HZ Standby</span>
-            <span class="window-countdown-pill" id="hero-countdown-pill">⏱️ 09:30 ORB / 13:40 Afternoon</span>
+            <span class="hero-zero-badge standby" id="hero-zero-status-badge">⏳ 1M S/R Active</span>
+            <span class="window-countdown-pill" id="hero-countdown-pill">⏱️ Pattern Scanner</span>
           </div>
 
           <p class="hero-rationale" id="hero-rationale">
-            Rule engine is monitoring 5m candle closes and Nifty drivers. Default is WAIT until all confluence criteria align.
+            Scanning active chart for candlestick patterns and 1-month Support/Resistance confirmation. Default is WAIT until all confluence criteria align.
           </p>
         </div>
 
-        <!-- Market Pressure Meter -->
-        <div class="card-section">
-          <div class="section-title">
-            <span>Market Pressure Score</span>
-            <span class="pressure-badge" id="hero-pressure-score">0 / 100</span>
+        <!-- 1-Month Data Verification & S/R Card -->
+        <div class="card-section sr-verification-card" style="border: 1px solid rgba(0, 212, 255, 0.25); background: rgba(0, 212, 255, 0.04); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+          <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>📊 1-Month Data Verification (S/R)</span>
+            <span class="status-pill" id="sr-confluence-status" style="background:rgba(255, 183, 3, 0.15); color:#FFB703; border:1px solid rgba(255, 183, 3, 0.3);">Mid-Range Check</span>
           </div>
-          <div class="pressure-track">
-            <div class="pressure-marker" id="pressure-marker" style="left: 50%;"></div>
-          </div>
-          <div class="pressure-legend">
-            <span>-100 (Bearish)</span>
-            <span>0 (Neutral)</span>
-            <span>+100 (Bullish)</span>
+          
+          <div class="vix-stats-grid" style="margin-top:8px; margin-bottom:8px;">
+            <div class="vix-stat">
+              <span class="lbl">1M HIGH (CEILING)</span>
+              <span class="val text-crimson" id="sr-month-high">--</span>
+            </div>
+            <div class="vix-stat">
+              <span class="lbl">MONTHLY PIVOT</span>
+              <span class="val text-cyan" id="sr-month-pivot">--</span>
+            </div>
+            <div class="vix-stat">
+              <span class="lbl">1M LOW (FLOOR)</span>
+              <span class="val text-emerald" id="sr-month-low">--</span>
+            </div>
           </div>
 
-          <div class="driver-highlights">
-            <div class="driver-col">
-              <span class="sub-lbl text-emerald">TOP SUPPORTING DRIVERS</span>
-              <ul class="mini-list" id="hero-supporting-drivers">
-                <li>Awaiting scan...</li>
-              </ul>
+          <div style="font-size:11px; display:flex; flex-direction:column; gap:4px; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
+            <div style="display:flex; justify-content:space-between;">
+              <span style="color:#94A3B8;">🔴 Major Resistance (R1):</span>
+              <span id="sr-res-val" style="color:#FF8BA7; font-weight:700;">-- [Tested 3x]</span>
             </div>
-            <div class="driver-col">
-              <span class="sub-lbl text-crimson">TOP OPPOSING DRIVERS</span>
-              <ul class="mini-list" id="hero-opposing-drivers">
-                <li>Awaiting scan...</li>
-              </ul>
+            <div style="display:flex; justify-content:space-between;">
+              <span style="color:#94A3B8;">🟢 Major Support (S1):</span>
+              <span id="sr-sup-val" style="color:#6EE7B7; font-weight:700;">-- [Tested 4x]</span>
             </div>
           </div>
         </div>
@@ -164,8 +162,8 @@
             <span class="status-pill" id="hero-pattern-location">Location Confluence</span>
           </div>
           <div class="pattern-detail-row">
-            <strong id="hero-pattern-name">No Active Pattern</strong>
-            <span class="pattern-desc" id="hero-pattern-desc">Patterns in the middle of nowhere are automatically filtered.</span>
+            <strong id="hero-pattern-name">Scanning Active Candles...</strong>
+            <span class="pattern-desc" id="hero-pattern-desc">Candlestick patterns are verified against 1-Month Support & Resistance levels.</span>
           </div>
         </div>
 

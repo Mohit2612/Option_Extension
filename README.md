@@ -132,6 +132,7 @@ Computes a **Market Pressure Score from -100 (Very Bearish) to +100 (Very Bullis
 2. `services/expiryCalendar.js`: Dynamic Thursday expiry schedule, holiday prepone resolution, monthly vs weekly expiry resolver, and lot size lookup.
 3. `services/riskManager.js`: Daily loss circuit breaker, max trades limiter, Hero-Zero 2-loss lockout, and lot calculation based on pre-accepted premium risk.
 4. `services/optionChain.js`: 1–3 step OTM strike selection within ₹5–₹40 premium band, delta estimation, required points to double ($Pts_{2x} = \frac{Premium}{\Delta}$), and liquidity rating.
+5. `services/supportResistanceEngine.js`: 1-Month Historical Support & Resistance Verification Engine. Computes 30-day High, Low, Equilibrium Pivot, Major Resistance (R1 tested 3x), and Major Support (S1 tested 4x). Validates candlestick pattern location and confirms high-probability BUY/SELL trades strictly at S/R floors and ceilings.
 
 ---
 
@@ -147,6 +148,9 @@ node tests/strategy-engine.test.js
 
 # 3. Time-Aware Strategy Suite (Modules A, B, C & Foundation Services - 7 Tests)
 node tests/time-strategies.test.js
+
+# 4. 1-Month Support/Resistance & Pattern Verification Tests (5 Tests)
+node tests/support-resistance.test.js
 ```
 
 ---

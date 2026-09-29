@@ -72,22 +72,18 @@
     root.style.width = `${rect.width}px`;
     root.style.height = `${rect.height}px`;
 
-    // 1. Symbol Guard: Check if active chart is NIFTY
-    const activeSymbol = data.symbol || extractActiveSymbol();
+    // 1. Symbol Identification (Universal: Nifty, BankNifty, Stocks, Crypto, Forex)
+    const activeSymbol = (data.symbol || extractActiveSymbol()).toUpperCase();
     const isNifty = isNiftySymbol(activeSymbol);
 
-    if (!isNifty) {
-      renderSymbolWarning(root, activeSymbol);
-    }
-
-    // 2. Render Live Institutional On-Chart HUD
-    renderLiveNiftyHud(root, data, isNifty);
+    // 2. Render Universal Live HUD
+    renderLiveNiftyHud(root, data, activeSymbol, isNifty);
 
     // 3. Render Top-Right Mini Control HUD
     renderControlHud(root, data);
 
-    // 4. Render SVG Price Projections (Entry, SL, Targets, Key Levels)
-    if (activeLayers.lines && data.levels) {
+    // 4. Render SVG Price Projections (1-Month S/R, Entry, SL, Targets, Key Levels)
+    if (activeLayers.lines && (data.levels || data.srLevels || data.keyLevels)) {
       renderSvgOverlay(root, rect, data);
     }
   }
@@ -100,66 +96,56 @@
 
   function extractActiveSymbol() {
     const symbolEl = document.querySelector('#header-toolbar-symbol-search') ||
-      document.querySelector('[data-name="legend-series-item"] [data-name="legend-source-title"]');
-    return symbolEl?.textContent?.trim()?.split(' ')?.[0] || 'NIFTY';
+      document.querySelector('[data-name="legend-series-item"] [data-name="legend-source-title"]') ||
+      document.querySelector('button[id*="symbol-search"]');
+    return symbolEl?.textContent?.trim()?.split(' ')?.[0] || 'CHART';
   }
 
-  function renderSymbolWarning(root, sym) {
-    const warning = document.createElement('div');
-    warning.className = 'tradesight-symbol-warning';
-    warning.innerHTML = `
-      <div class="warning-pill">
-        ⚠️ Non-Nifty Asset: "${sym}" — TradeSight AI is calibrated exclusively for <strong>NIFTY 50</strong>. Switch to NIFTY chart for accurate signals.
-      </div>
-    `;
-    root.appendChild(warning);
-  }
-
-  function renderLiveNiftyHud(root, data, isNifty) {
+  function renderLiveNiftyHud(root, data, activeSymbol, isNifty) {
     const hud = document.createElement('div');
     hud.className = 'tradesight-nifty-hud';
 
     const signal = data.signal || 'WAIT';
     const confidence = data.confidence || 0;
     const pressureScore = data.pressureScore !== undefined ? data.pressureScore : 0;
-    const regimeLabel = data.regime?.label || 'Nifty 50 Strategy Engine';
-    const strategyName = data.strategyName || 'Rule Engine Standing By';
+    const regimeLabel = data.regime?.label || '1-Month S/R Verified Scan';
+    const strategyName = data.strategyName || (data.patternName ? `Pattern: ${data.patternName}` : 'Rule Engine Active');
 
     let signalClass = 'hud-signal-wait';
     if (signal === 'BUY') signalClass = 'hud-signal-buy';
     if (signal === 'SELL') signalClass = 'hud-signal-sell';
 
     const heroStatus = data.heroZeroStatus || { armed: false, locked: false };
-    const countdown = data.countdown || { label: '09:30 ORB / 13:40 Afternoon' };
+    const countdown = data.countdown || { label: 'Active Pattern Scanner' };
+    const srLocation = data.srLocation || (data.srLevels ? `Sup: ${data.srLevels.majorSupport?.price} | Res: ${data.srLevels.majorResistance?.price}` : '1-Month S/R Active');
 
     hud.innerHTML = `
       <div class="nifty-hud-header">
         <div class="hud-brand">
-          <span class="hud-badge">NIFTY 50</span>
+          <span class="hud-badge">${activeSymbol}</span>
           <span class="hud-regime">${regimeLabel}</span>
         </div>
         <div class="hud-pressure ${pressureScore > 15 ? 'bullish' : pressureScore < -15 ? 'bearish' : 'neutral'}">
-          Pressure: <strong>${pressureScore > 0 ? '+' : ''}${pressureScore}</strong>
+          ${isNifty ? `Pressure: <strong>${pressureScore > 0 ? '+' : ''}${pressureScore}</strong>` : `S/R Verified`}
         </div>
       </div>
 
       <div class="nifty-hud-body">
         <div class="hud-next-move ${signalClass}">
-          <div class="move-label">NEXT MOVE</div>
+          <div class="move-label">ACTION</div>
           <div class="move-action">${signal}</div>
-          <div class="move-conf">${confidence > 0 ? confidence + '% Conviction' : 'Cash is a Position'}</div>
+          <div class="move-conf">${confidence > 0 ? confidence + '% Conviction' : 'Wait for S/R'}</div>
         </div>
 
         <div class="hud-meta-col">
           <div class="hud-metric">
-            <span class="lbl">STRATEGY</span>
-            <span class="val">${strategyName}</span>
+            <span class="lbl">PATTERN</span>
+            <span class="val" style="color:#00D4FF; font-weight:700;">${data.patternName ? data.patternName : 'Scanning Candles...'}</span>
           </div>
-          ${data.vixSummary ? `
           <div class="hud-metric">
-            <span class="lbl">INDIA VIX</span>
-            <span class="val">${data.vixSummary}</span>
-          </div>` : ''}
+            <span class="lbl">1M S/R CONFLUENCE</span>
+            <span class="val" style="color:#FBBF24;">${srLocation}</span>
+          </div>
           ${data.levels ? `
           <div class="hud-metric">
             <span class="lbl">EXECUTION</span>
@@ -173,8 +159,8 @@
       </div>
 
       <div class="hud-extra-row">
-        <span class="hero-zero-badge ${heroStatus.locked ? 'locked' : heroStatus.armed ? 'armed' : 'standby'}">
-          ${heroStatus.locked ? '🔒 HZ Locked' : heroStatus.armed ? '⚡ Hero-Zero Armed' : '⏳ HZ Standby'}
+        <span class="hero-zero-badge ${isNifty ? (heroStatus.locked ? 'locked' : heroStatus.armed ? 'armed' : 'standby') : 'standby'}">
+          ${isNifty ? (heroStatus.locked ? '🔒 HZ Locked' : heroStatus.armed ? '⚡ Hero-Zero Armed' : '⏳ HZ Standby') : '📊 1-Month S/R Confluence'}
         </span>
         <span class="window-countdown-pill">
           ⏱️ ${countdown.label}
@@ -225,6 +211,7 @@
 
     const levels = data.levels || {};
     const keyLevels = data.keyLevels || {};
+    const sr = data.srLevels || {};
 
     // Collect all visible price points for coordinate mapping
     const prices = [
@@ -236,7 +223,10 @@
       keyLevels.pdh,
       keyLevels.pdl,
       keyLevels.orh,
-      keyLevels.orl
+      keyLevels.orl,
+      sr.majorResistance?.price,
+      sr.majorSupport?.price,
+      sr.intermediatePivot?.price
     ].filter((p) => typeof p === 'number' && !isNaN(p));
 
     if (prices.length === 0) return;
@@ -251,7 +241,18 @@
       return Math.max(25, Math.min(rect.height - 25, y));
     };
 
-    // 1. Draw Opening Range Box (09:15 - 09:30 ORB)
+    // 1. Draw 1-Month Major Support & Resistance Zones
+    if (sr.majorResistance?.price) {
+      drawHorizontalLine(svg, rect.width, getY(sr.majorResistance.price), '#FF3B69', `1M RES: ${sr.majorResistance.price} [Tested ${sr.majorResistance.testedCount || 3}x]`, 'dashed');
+    }
+    if (sr.majorSupport?.price) {
+      drawHorizontalLine(svg, rect.width, getY(sr.majorSupport.price), '#00E676', `1M SUP: ${sr.majorSupport.price} [Tested ${sr.majorSupport.testedCount || 4}x]`, 'dashed');
+    }
+    if (sr.intermediatePivot?.price) {
+      drawHorizontalLine(svg, rect.width, getY(sr.intermediatePivot.price), '#00D4FF', `1M PIVOT: ${sr.intermediatePivot.price}`, 'dashed');
+    }
+
+    // 2. Draw Opening Range Box (09:15 - 09:30 ORB)
     const orh = keyLevels.orh;
     const orl = keyLevels.orl;
     if (orh && orl && orh > orl) {
@@ -277,17 +278,9 @@
       drawHorizontalLine(svg, rect.width, yLow, '#00D4FF', `ORL: ${orl}`, 'solid');
     }
 
-    // 2. VWAP Line
+    // 3. VWAP Line
     if (keyLevels.vwap) {
       drawHorizontalLine(svg, rect.width, getY(keyLevels.vwap), '#A855F7', `VWAP: ${keyLevels.vwap}`, 'dashed');
-    }
-
-    // 3. Day High / Low Lines
-    if (keyLevels.pdh) {
-      drawHorizontalLine(svg, rect.width, getY(keyLevels.pdh), '#F59E0B', `PDH: ${keyLevels.pdh}`, 'dashed');
-    }
-    if (keyLevels.pdl) {
-      drawHorizontalLine(svg, rect.width, getY(keyLevels.pdl), '#EC4899', `PDL: ${keyLevels.pdl}`, 'dashed');
     }
 
     // 4. Execution Levels: Entry, SL, TP1, TP2

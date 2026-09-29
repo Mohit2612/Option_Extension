@@ -53,14 +53,20 @@
       timeframe = intervalBtn.textContent.trim();
     }
 
-    // 3. Current Visible Price
+    // 3. Current Visible Price & Legend OHLC Extraction
     let currentPrice = null;
+    let candleOHLC = extractLegendOHLC();
+
     const lastPriceEl = document.querySelector('div[class*="last-"] [class*="value-"]') ||
       document.querySelector('[data-name="legend-series-item"] [class*="value-"]') ||
       document.querySelector('div[class*="price-axis"] div[class*="highlighted-"]');
 
     if (lastPriceEl && lastPriceEl.textContent) {
       currentPrice = parseFloat(lastPriceEl.textContent.replace(/[^0-9.-]/g, ''));
+    }
+
+    if ((!currentPrice || isNaN(currentPrice)) && candleOHLC?.close) {
+      currentPrice = candleOHLC.close;
     }
 
     // Fallback price from title
@@ -102,13 +108,46 @@
 
     return {
       symbol: symbol || 'ACTIVE_CHART',
-      timeframe: timeframe || 'D',
+      timeframe: timeframe || '15m',
       currentPrice: currentPrice || null,
+      candleOHLC: candleOHLC || null,
       indicators,
       chartRect,
       url: window.location.href,
       timestamp: Date.now()
     };
+  }
+
+  function extractLegendOHLC() {
+    try {
+      const seriesItem = document.querySelector('[data-name="legend-series-item"]');
+      if (!seriesItem) return null;
+
+      const valuesWrappers = seriesItem.querySelectorAll('[class*="value-"], [class*="valueValue-"], [class*="itemText-"]');
+      const numbers = [];
+
+      valuesWrappers.forEach((el) => {
+        const text = el.textContent.trim().replace(/,/g, '');
+        const val = parseFloat(text);
+        if (!isNaN(val) && val > 0 && text.match(/^[0-9.]+/)) {
+          numbers.push(val);
+        }
+      });
+
+      // Usually TradingView presents O, H, L, C in order
+      if (numbers.length >= 4) {
+        return {
+          open: numbers[0],
+          high: numbers[1],
+          low: numbers[2],
+          close: numbers[3],
+          volume: numbers[4] || 0
+        };
+      }
+    } catch (e) {
+      // DOM query fallback
+    }
+    return null;
   }
 
   console.info('[TradeSight AI] Chart Detector initialized on TradingView.');
