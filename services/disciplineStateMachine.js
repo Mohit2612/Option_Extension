@@ -177,12 +177,12 @@ export const DisciplineStateMachine = {
   },
 
   /**
-   * INTERCEPTOR: Evaluates raw strategy signal against session rules and daily limits.
+   * INTERCEPTOR: Evaluates raw strategy signal against session rules, daily limits, and quality score.
    * Modifies signal actionable status before presenting to the trader.
-   * @param {Object} params - { rawSignal, sessionInfo, chartMeta, dailyState }
+   * @param {Object} params - { rawSignal, sessionInfo, chartMeta, dailyState, qualityScore }
    * @returns {Object} Filtered Signal with Discipline Annotations
    */
-  evaluateDisciplineGuard({ rawSignal, sessionInfo, chartMeta, dailyState = null }) {
+  evaluateDisciplineGuard({ rawSignal, sessionInfo, chartMeta, dailyState = null, qualityScore = null }) {
     if (!rawSignal) return null;
 
     const state = dailyState || this._getInitialDailyState();
@@ -218,6 +218,7 @@ export const DisciplineStateMachine = {
           tradesToday: state.tradesCount,
           canOverride: true
         },
+        qualityScore,
         levels: null
       };
     }
@@ -238,17 +239,49 @@ export const DisciplineStateMachine = {
           rules: sessionInfo.rules,
           countdown: sessionInfo.timeRemainingSec
         },
+        qualityScore,
         // We preserve levels for study/backtesting but flag as non-actionable
         isInfoOnly: true
       };
     }
 
-    // GUARD CONDITION 3: Signal Passes All Discipline Gates!
+    // GUARD CONDITION 3: Trade Quality Score Check (Module 3)
+    if (qualityScore) {
+      if (!qualityScore.isAllowed || qualityScore.grade === 'C') {
+        return {
+          ...rawSignal,
+          isActionable: false,
+          action: qualityScore.statusLabel || 'SKIP (Grade C)',
+          title: `⛔ ${qualityScore.gradeTitle || 'LOW QUALITY SETUP'}`,
+          setupRationale: `${qualityScore.verdictText} ${qualityScore.skipReason ? '\n\n' + qualityScore.skipReason : ''}\n\n${rawSignal.setupRationale || ''}`,
+          qualityScore,
+          disciplineStatus: {
+            isLocked: false,
+            isInsideSession: true,
+            gradeBlocked: true,
+            grade: qualityScore.grade,
+            score: qualityScore.totalScore,
+            sessionName: sessionInfo?.sessionName || 'Prime Window'
+          },
+          isInfoOnly: true
+        };
+      }
+
+      // If Grade B is allowed with reduced size
+      if (qualityScore.sizingMultiplier && qualityScore.sizingMultiplier < 1.0) {
+        positionSizeMultiplier *= qualityScore.sizingMultiplier;
+        const gradeBNote = `⚠️ ${qualityScore.gradeTitle}: Sizing scaled by ${qualityScore.sizingMultiplier}x due to moderate quality.`;
+        profitProtectionNote = profitProtectionNote ? `${profitProtectionNote}\n${gradeBNote}` : gradeBNote;
+      }
+    }
+
+    // GUARD CONDITION 4: Signal Passes All Discipline Gates!
     return {
       ...rawSignal,
       isActionable: rawSignal.signal !== 'WAIT',
       positionSizeMultiplier,
       profitProtectionNote,
+      qualityScore,
       disciplineStatus: {
         isLocked: false,
         isInsideSession: true,
@@ -256,7 +289,9 @@ export const DisciplineStateMachine = {
         realizedR: state.realizedR,
         tradesToday: state.tradesCount,
         maxTrades: limits.maxDailyTrades,
-        profitProtectionActive: positionSizeMultiplier < 1.0
+        profitProtectionActive: positionSizeMultiplier < 1.0,
+        grade: qualityScore?.grade || 'A',
+        score: qualityScore?.totalScore || 100
       }
     };
   },

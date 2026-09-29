@@ -15,6 +15,7 @@ import { BacktestEngine } from '../services/backtestEngine.js';
 import { AlertService } from '../services/alertService.js';
 import { SessionManager } from '../services/sessionManager.js';
 import { DisciplineStateMachine } from '../services/disciplineStateMachine.js';
+import { TradeQualityScorer } from '../services/tradeQualityScorer.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -76,7 +77,11 @@ async function loadUserConfig() {
         dailyProfitTargetR: res.ts_daily_profit_target_r || 2.0,
         dailyMaxLossR: res.ts_daily_max_loss_r || 2.0,
         profitProtectionMode: res.ts_profit_protection_mode !== false,
-        sessionProfile: res.ts_session_profile || 'MORNING_AFTERNOON'
+        sessionProfile: res.ts_session_profile || 'MORNING_AFTERNOON',
+        allowGradeB: res.ts_allow_grade_b !== false,
+        gradeBSizeMultiplier: res.ts_grade_b_multiplier || 0.75,
+        gradeAThreshold: res.ts_grade_a_threshold || 80,
+        gradeBThreshold: res.ts_grade_b_threshold || 65
       };
       resolve(appConfig);
     });
@@ -152,6 +157,19 @@ function initScanControls() {
       refreshJournalDashboard();
     } else {
       alert('Cannot log WAIT. Journal only tracks actionable setups.');
+    }
+  });
+
+  const toggleTqBtn = document.getElementById('btn-toggle-tq-breakdown');
+  toggleTqBtn?.addEventListener('click', () => {
+    const container = document.getElementById('tq-breakdown-container');
+    if (!container) return;
+    if (container.style.display === 'none' || container.style.display === '') {
+      container.style.display = 'flex';
+      toggleTqBtn.textContent = 'Hide Breakdown ▲';
+    } else {
+      container.style.display = 'none';
+      toggleTqBtn.textContent = 'View Breakdown ▾';
     }
   });
 }
@@ -269,11 +287,28 @@ async function runNiftyScan() {
 
     const dailyDisciplineState = await DisciplineStateMachine.getState();
 
+    // MODULE 3: TRADE QUALITY SCORE EVALUATION (0-100 & A/B/C GRADING)
+    const qualityScore = TradeQualityScorer.evaluateQuality({
+      signalData: finalSignal,
+      candles,
+      keyLevels,
+      driverData,
+      chartMeta: currentChartMeta,
+      userConfig: {
+        allowGradeB: appConfig.allowGradeB !== false,
+        gradeBSizeMultiplier: appConfig.gradeBSizeMultiplier || 0.75,
+        gradeAThreshold: appConfig.gradeAThreshold || 80,
+        gradeBThreshold: appConfig.gradeBThreshold || 65
+      },
+      currentTime: now
+    });
+
     finalSignal = DisciplineStateMachine.evaluateDisciplineGuard({
       rawSignal: finalSignal,
       sessionInfo,
       chartMeta: currentChartMeta,
-      dailyState: dailyDisciplineState
+      dailyState: dailyDisciplineState,
+      qualityScore
     });
 
     latestSignal = finalSignal;
@@ -289,6 +324,7 @@ async function runNiftyScan() {
 
     // 9. Render Sidepanel UI
     renderNextMoveHero(latestSignal, driverData, detectedPattern, srData, srConfirmation);
+    renderTradeQualityCard(qualityScore);
 
     // 10. Auto-Draw on TradingView Overlay
     dispatchOverlayToChart(latestSignal, driverData, keyLevels, srData);
@@ -426,6 +462,78 @@ function renderNextMoveHero(signalData, driverData, pattern, srData = null, srCo
   document.getElementById('hero-level-tp2').textContent = signalData.levels?.target2 || '--';
   document.getElementById('hero-trade-rr').textContent = signalData.levels?.riskRewardRatio ? `R:R ${signalData.levels.riskRewardRatio}` : 'Min 1:2.0';
   document.getElementById('hero-level-invalidation').textContent = signalData.invalidation || 'Wait for setup.';
+}
+
+function renderTradeQualityCard(qualityScore) {
+  const gradeBadge = document.getElementById('tq-grade-badge');
+  const statusBadge = document.getElementById('tq-status-badge');
+  const verdictText = document.getElementById('tq-verdict-text');
+  const container = document.getElementById('tq-breakdown-container');
+
+  if (!qualityScore) return;
+
+  if (gradeBadge) {
+    gradeBadge.textContent = qualityScore.gradeTitle;
+    if (qualityScore.grade === 'A') {
+      gradeBadge.style.background = 'rgba(0, 230, 118, 0.15)';
+      gradeBadge.style.color = '#00E676';
+      gradeBadge.style.borderColor = '#00E676';
+    } else if (qualityScore.grade === 'B') {
+      gradeBadge.style.background = 'rgba(251, 191, 36, 0.15)';
+      gradeBadge.style.color = '#FBBF24';
+      gradeBadge.style.borderColor = '#FBBF24';
+    } else {
+      gradeBadge.style.background = 'rgba(255, 59, 105, 0.15)';
+      gradeBadge.style.color = '#FF3B69';
+      gradeBadge.style.borderColor = '#FF3B69';
+    }
+  }
+
+  if (statusBadge) {
+    statusBadge.textContent = qualityScore.statusLabel;
+    if (qualityScore.isAllowed) {
+      statusBadge.style.background = qualityScore.grade === 'A' ? 'rgba(0, 212, 255, 0.15)' : 'rgba(251, 191, 36, 0.15)';
+      statusBadge.style.color = qualityScore.grade === 'A' ? '#00D4FF' : '#FBBF24';
+      statusBadge.style.borderColor = qualityScore.grade === 'A' ? '#00D4FF' : '#FBBF24';
+    } else {
+      statusBadge.style.background = 'rgba(255, 59, 105, 0.15)';
+      statusBadge.style.color = '#FF3B69';
+      statusBadge.style.borderColor = '#FF3B69';
+    }
+  }
+
+  if (verdictText) {
+    verdictText.textContent = qualityScore.verdictText;
+  }
+
+  if (container && Array.isArray(qualityScore.breakdown)) {
+    container.innerHTML = '';
+    qualityScore.breakdown.forEach((f) => {
+      const item = document.createElement('div');
+      item.style.background = 'rgba(255, 255, 255, 0.02)';
+      item.style.padding = '6px 8px';
+      item.style.borderRadius = '5px';
+      item.style.borderLeft = f.rawScore >= 80 ? '3px solid #00E676' : f.rawScore >= 65 ? '3px solid #FBBF24' : '3px solid #FF3B69';
+
+      const color = f.rawScore >= 80 ? '#00E676' : f.rawScore >= 65 ? '#FBBF24' : '#FF3B69';
+
+      item.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+          <span style="font-size:10px; font-weight:700; color:#E2E8F0;">
+            ${f.name} <span style="font-size:9px; color:#94A3B8; font-weight:400;">(${f.weight}%)</span>
+          </span>
+          <span style="font-size:10px; font-weight:800; color:${color};">
+            ${f.rawScore}/100 <span style="font-size:9px; color:#94A3B8;">(+${f.weightedScore.toFixed(1)})</span>
+          </span>
+        </div>
+        <div style="background:rgba(255,255,255,0.06); height:4px; border-radius:2px; overflow:hidden; margin-bottom:4px;">
+          <div style="background:${color}; height:100%; width:${f.rawScore}%;"></div>
+        </div>
+        <div style="font-size:9.5px; color:#94A3B8; line-height:1.35;">${f.note}</div>
+      `;
+      container.appendChild(item);
+    });
+  }
 }
 
 async function dispatchOverlayToChart(signalData, driverData, keyLevels = {}, srData = {}) {
@@ -951,6 +1059,11 @@ function initSettingsForm() {
   const maxLossRInput = document.getElementById('cfg-daily-max-loss-r');
   const profitProtCheckbox = document.getElementById('cfg-profit-protection-mode');
 
+  const allowGradeBInput = document.getElementById('cfg-allow-grade-b');
+  const gradeBMultInput = document.getElementById('cfg-grade-b-size-multiplier');
+  const gradeAThreshInput = document.getElementById('cfg-grade-a-threshold');
+  const gradeBThreshInput = document.getElementById('cfg-grade-b-threshold');
+
   const saveBtn = document.getElementById('btn-save-settings');
   const toggleKey = document.getElementById('btn-toggle-key-visibility');
 
@@ -970,6 +1083,11 @@ function initSettingsForm() {
   if (maxLossRInput) maxLossRInput.value = appConfig.dailyMaxLossR || 2.0;
   if (profitProtCheckbox) profitProtCheckbox.checked = appConfig.profitProtectionMode !== false;
 
+  if (allowGradeBInput) allowGradeBInput.checked = appConfig.allowGradeB !== false;
+  if (gradeBMultInput) gradeBMultInput.value = appConfig.gradeBSizeMultiplier || 0.75;
+  if (gradeAThreshInput) gradeAThreshInput.value = appConfig.gradeAThreshold || 80;
+  if (gradeBThreshInput) gradeBThreshInput.value = appConfig.gradeBThreshold || 65;
+
   toggleKey?.addEventListener('click', () => {
     keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
   });
@@ -988,6 +1106,10 @@ function initSettingsForm() {
       ts_daily_profit_target_r: parseFloat(profitTargetInput?.value) || 2.0,
       ts_daily_max_loss_r: parseFloat(maxLossRInput?.value) || 2.0,
       ts_profit_protection_mode: profitProtCheckbox ? profitProtCheckbox.checked : true,
+      ts_allow_grade_b: allowGradeBInput ? allowGradeBInput.checked : true,
+      ts_grade_b_multiplier: parseFloat(gradeBMultInput?.value) || 0.75,
+      ts_grade_a_threshold: parseInt(gradeAThreshInput?.value, 10) || 80,
+      ts_grade_b_threshold: parseInt(gradeBThreshInput?.value, 10) || 65,
       ts_gemini_api_key: keyInput.value.trim()
     };
 

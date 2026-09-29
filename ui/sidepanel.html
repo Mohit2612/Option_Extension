@@ -219,6 +219,34 @@
           </p>
         </div>
 
+        <!-- MODULE 3: TRADE QUALITY SCORE & SETUP GRADE (A / B / C) -->
+        <div class="card-section trade-quality-card" id="trade-quality-card" style="border: 1px solid rgba(168, 85, 247, 0.35); background: rgba(168, 85, 247, 0.05); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:12px; font-weight:800; color:#C084FC;">🎯 TRADE QUALITY SCORE</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span id="tq-grade-badge" style="font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px; background:rgba(0,230,118,0.15); color:#00E676; border:1px solid #00E676;">GRADE A • 85/100</span>
+              <span id="tq-status-badge" style="font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(0,212,255,0.15); color:#00D4FF; border:1px solid #00D4FF;">ALLOWED (1.0x)</span>
+            </div>
+          </div>
+
+          <p id="tq-verdict-text" style="font-size:10.5px; color:#E2E8F0; margin:0 0 8px 0; line-height:1.4;">
+            Awaiting chart scan to score setup against the 8 institutional quality factors.
+          </p>
+
+          <!-- Toggle / Header for Factor Breakdown -->
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-top:1px solid rgba(255,255,255,0.06); margin-bottom:6px;">
+            <span style="font-size:10px; font-weight:700; color:#94A3B8;">8-FACTOR CONFLUENCE BREAKDOWN:</span>
+            <button id="btn-toggle-tq-breakdown" type="button" style="background:none; border:none; color:#C084FC; font-size:10px; cursor:pointer; font-weight:700; padding:0;">View Breakdown ▾</button>
+          </div>
+
+          <!-- Factor Breakdown Container (Expandable) -->
+          <div id="tq-breakdown-container" style="display:none; flex-direction:column; gap:6px; margin-top:4px;">
+            <!-- Populated dynamically via sidepanel.js -->
+          </div>
+        </div>
+
         <!-- 1-Month Data Verification & S/R Card -->
         <div class="card-section sr-verification-card" style="border: 1px solid rgba(0, 212, 255, 0.25); background: rgba(0, 212, 255, 0.04); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
           <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
@@ -708,6 +736,36 @@
               <span class="field-hint" style="display:block;">Cut position size by 50% after +1R; lock completely upon daily target.</span>
             </div>
             <input type="checkbox" id="cfg-profit-protection-mode" checked style="width:20px; height:20px;">
+          </div>
+
+          <!-- Trade Quality Scoring Settings (Module 3) -->
+          <div class="card-section" style="border:1px solid rgba(192, 132, 252, 0.3); background:rgba(192, 132, 252, 0.04); border-radius:6px; padding:8px; margin-bottom:12px;">
+            <div style="font-size:11px; font-weight:800; color:#C084FC; margin-bottom:6px;">🎯 Trade Quality Scoring (Module 3)</div>
+            
+            <div class="form-row" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+              <div>
+                <label for="cfg-allow-grade-b" style="margin-bottom:2px; font-size:11px;">Allow Grade B Trades</label>
+                <span class="field-hint" style="display:block;">If unchecked, strictly allows Grade A (80+) and skips Grade B.</span>
+              </div>
+              <input type="checkbox" id="cfg-allow-grade-b" checked style="width:18px; height:18px;">
+            </div>
+
+            <div class="form-row" style="margin-bottom:6px;">
+              <label for="cfg-grade-b-size-multiplier" style="font-size:11px;">Grade B Size Multiplier</label>
+              <input type="number" id="cfg-grade-b-size-multiplier" value="0.75" step="0.05" min="0.25" max="1.0">
+              <span class="field-hint">Position size multiplier for Grade B setups (0.75x default = 25% size reduction).</span>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <label for="cfg-grade-a-threshold" style="font-size:10px;">Grade A Min Score</label>
+                <input type="number" id="cfg-grade-a-threshold" value="80" min="70" max="95" style="width:100%;">
+              </div>
+              <div>
+                <label for="cfg-grade-b-threshold" style="font-size:10px;">Grade B Min Score</label>
+                <input type="number" id="cfg-grade-b-threshold" value="65" min="50" max="79" style="width:100%;">
+              </div>
+            </div>
           </div>
 
           <div class="form-row">
