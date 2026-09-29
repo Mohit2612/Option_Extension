@@ -22,12 +22,18 @@ import { BehaviorGuard } from '../discipline/behaviorGuard.js';
 import { NoTradeFilters } from '../discipline/noTradeFilters.js';
 import { JournalAnalytics } from '../journal/analytics.js';
 import { DisciplinePanel } from './disciplinePanel.js';
+import { ScalpPanel } from './scalpPanel.js';
+import { ScalpStrategy } from '../scalping/scalpStrategy.js';
+import { StreamingProvider } from '../services/streamingProvider.js';
+import { ScalpRenderer } from '../overlay/scalpRenderer.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
 
 let appConfig = {};
 let latestSignal = null;
 let latestDrivers = null;
+let latestScalpSetup = null;
+let streamingProvider = null;
 let currentChartMeta = null;
 let dailyLossCount = 0;
 let isRiskLocked = false;
@@ -61,6 +67,21 @@ async function initApp() {
     }
   });
 
+  // Initialize Scalping & Spike Watch Module
+  await ScalpPanel.init({
+    onToggleChange: (enabled) => {
+      appConfig.scalpEnabled = enabled;
+      handleStreamingProviderState(enabled);
+      runNiftyScan();
+    },
+    onPresetChange: (preset) => {
+      appConfig.scalpPreset = preset;
+      runNiftyScan();
+    }
+  });
+
+  handleStreamingProviderState(ScalpPanel.isEnabled);
+
   // Probe TradingView chart
   probeTradingViewChart();
 
@@ -69,6 +90,28 @@ async function initApp() {
 
   // Update session & countdown badges
   updateSessionBadges();
+}
+
+function handleStreamingProviderState(enabled) {
+  if (enabled) {
+    if (!streamingProvider) {
+      streamingProvider = new StreamingProvider({
+        latencyAlertThresholdMs: appConfig.scalpMaxLatency || 1500
+      });
+      streamingProvider.onTick((tick) => {
+        ScalpPanel.updateLatency(tick.tickLatencyMs, streamingProvider.isStreamConnected());
+      });
+      streamingProvider.onStatus((status) => {
+        ScalpPanel.updateLatency(status.latencyMs, status.connected);
+      });
+    }
+    streamingProvider.connect();
+  } else {
+    if (streamingProvider) {
+      streamingProvider.disconnect();
+    }
+    ScalpPanel.updateLatency(0, false);
+  }
 }
 
 async function loadUserConfig() {
@@ -97,7 +140,10 @@ async function loadUserConfig() {
         allowGradeB: res.ts_allow_grade_b !== false,
         gradeBSizeMultiplier: res.ts_grade_b_multiplier || 0.75,
         gradeAThreshold: res.ts_grade_a_threshold || 80,
-        gradeBThreshold: res.ts_grade_b_threshold || 65
+        gradeBThreshold: res.ts_grade_b_threshold || 65,
+        scalpEnabled: res.ts_scalp_module_enabled === true,
+        scalpPreset: res.ts_scalp_preset || 'CONSERVATIVE',
+        scalpMaxLatency: res.ts_scalp_max_latency || 1500
       };
       resolve(appConfig);
     });
@@ -397,6 +443,55 @@ async function runNiftyScan() {
 
     latestSignal = finalSignal;
 
+    // 8b. Scalping & Spike Watch Engine Evaluation
+    if (ScalpPanel.isEnabled) {
+      const presetSettings = ScalpPanel.PRESETS[ScalpPanel.preset] || ScalpPanel.PRESETS.CONSERVATIVE;
+      latestScalpSetup = ScalpStrategy.evaluateSetup({
+        candles,
+        currentPrice,
+        keyLevels,
+        driverData,
+        optionsData: {
+          atmCallOiChange: -350000,
+          atmPutOiChange: 420000,
+          pcrChange: 0.12,
+          ivExpansionPct: 4.5
+        },
+        currentTime: now,
+        isExpiryDay,
+        dailyScalpState: {
+          tradesToday: dailyDisciplineState.tradeCount || 0,
+          consecutiveLosses: dailyDisciplineState.consecutiveLosses || 0,
+          isLocked: dailyDisciplineState.isLocked
+        },
+        config: {
+          isEnabled: true,
+          riskPctPerScalp: presetSettings.riskPctPerScalp,
+          maxScalpsPerDay: presetSettings.maxScalpsPerDay,
+          minNetRR: presetSettings.minNetRR,
+          atrMultiplierSL: presetSettings.atrMultiplierSL,
+          timeStopMinutes: presetSettings.timeStopMinutes,
+          capitalINR: appConfig.capitalINR || 200000,
+          lotSize: appConfig.lotSize || 25
+        }
+      });
+
+      ScalpPanel.renderScalpUpdate(latestScalpSetup);
+
+      if (latestScalpSetup.isActionable && latestScalpSetup.status === 'TRIGGERED') {
+        AlertService.sendNotification('⚡ SCALP TRIGGER CONFIRMED', `${latestScalpSetup.direction} @ ${latestScalpSetup.entryPrice} (SL: ${latestScalpSetup.stopLoss}, Net 1:${latestScalpSetup.costAnalysis?.netRR}R)`);
+      } else if (latestScalpSetup.readiness?.state === 'SPIKE_RISK_HIGH') {
+        AlertService.sendNotification('⚠️ SPIKE RISK HIGH', `Pre-spike conditions building near ${latestScalpSetup.readiness.watchedKeyLevel || 'Pivot'}. Score: ${latestScalpSetup.readiness.score}/100.`);
+      }
+    } else {
+      latestScalpSetup = null;
+      ScalpPanel.renderScalpUpdate({
+        isActionable: false,
+        status: 'INACTIVE',
+        readiness: { score: 0, state: 'CALM', stateLabel: 'CALM', directionLean: 'UNCLEAR' }
+      });
+    }
+
     // Audible & Desktop Alerts on Actionable Confirmations ONLY IF Discipline Layer & Checklist permit action
     if (latestSignal.isActionable && latestSignal.confirmed && latestSignal.signal === 'BUY') {
       AlertService.playBuyChime();
@@ -654,6 +749,7 @@ async function dispatchOverlayToChart(signalData, driverData, keyLevels = {}, sr
           countdown: {
             label: `${cd.label} (${cd.remainingFormatted})`
           },
+          scalpSetup: latestScalpSetup ? { ...latestScalpSetup, isEnabled: ScalpPanel.isEnabled } : null,
           timestamp: Date.now()
         }
       }
@@ -1217,6 +1313,14 @@ function initSettingsForm() {
   if (gradeAThreshInput) gradeAThreshInput.value = appConfig.gradeAThreshold || 80;
   if (gradeBThreshInput) gradeBThreshInput.value = appConfig.gradeBThreshold || 65;
 
+  const scalpEnabledInput = document.getElementById('cfg-scalp-enabled');
+  const scalpPresetInput = document.getElementById('cfg-scalp-preset');
+  const scalpLatencyInput = document.getElementById('cfg-scalp-max-latency');
+
+  if (scalpEnabledInput) scalpEnabledInput.checked = appConfig.scalpEnabled === true;
+  if (scalpPresetInput) scalpPresetInput.value = appConfig.scalpPreset || 'CONSERVATIVE';
+  if (scalpLatencyInput) scalpLatencyInput.value = appConfig.scalpMaxLatency || 1500;
+
   toggleKey?.addEventListener('click', () => {
     keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
   });
@@ -1242,11 +1346,25 @@ function initSettingsForm() {
       ts_grade_b_multiplier: parseFloat(gradeBMultInput?.value) || 0.75,
       ts_grade_a_threshold: parseInt(gradeAThreshInput?.value, 10) || 80,
       ts_grade_b_threshold: parseInt(gradeBThreshInput?.value, 10) || 65,
+      ts_scalp_module_enabled: scalpEnabledInput ? scalpEnabledInput.checked : false,
+      ts_scalp_preset: scalpPresetInput ? scalpPresetInput.value : 'CONSERVATIVE',
+      ts_scalp_max_latency: parseInt(scalpLatencyInput?.value, 10) || 1500,
       ts_gemini_api_key: keyInput.value.trim()
     };
 
     chrome.storage.local.set(updated);
     Object.assign(appConfig, updated);
+
+    // Sync ScalpPanel state
+    ScalpPanel.isEnabled = updated.ts_scalp_module_enabled;
+    ScalpPanel.preset = updated.ts_scalp_preset;
+    ScalpPanel.latencyMonitor.setMaxThreshold(updated.ts_scalp_max_latency);
+    const mainScalpToggle = document.getElementById('chk-enable-scalp-module');
+    if (mainScalpToggle) mainScalpToggle.checked = ScalpPanel.isEnabled;
+    const mainScalpPreset = document.getElementById('scalp-preset-select');
+    if (mainScalpPreset) mainScalpPreset.value = ScalpPanel.preset;
+    ScalpPanel.renderPanelState();
+    handleStreamingProviderState(ScalpPanel.isEnabled);
 
     // Sync updated limits to Discipline State Machine
     try {

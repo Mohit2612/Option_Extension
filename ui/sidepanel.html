@@ -257,6 +257,97 @@
           </div>
         </div>
 
+        <!-- SCALPING & SPIKE WATCH MODULE (OPT-IN WITH ZERO FOOTPRINT WHEN OFF) -->
+        <div class="card-section scalp-spike-card" id="scalp-spike-module-card" style="border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.04); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:12px; font-weight:800; color:#F59E0B;">⚡ SCALPING & SPIKE WATCH</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span id="scalp-latency-badge" style="font-size:9.5px; font-weight:800; padding:1px 6px; border-radius:3px; background:rgba(0,230,118,0.15); color:#00E676; border:1px solid #00E676;">🟢 45ms</span>
+              <label style="display:flex; align-items:center; gap:4px; font-size:10px; font-weight:700; color:#CBD5E1; cursor:pointer;">
+                <input type="checkbox" id="chk-enable-scalp-module" style="cursor:pointer; width:14px; height:14px;">
+                <span>ENABLE</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Active Scalp / Spike Watch Content (Shown when Enabled) -->
+          <div id="scalp-module-content" style="display:none;">
+            <!-- Preset & Latency Status Line -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:9.5px;">
+              <div style="display:flex; align-items:center; gap:4px;">
+                <span style="color:#94A3B8;">PRESET:</span>
+                <select id="scalp-preset-select" style="background:#0B0F19; color:#F59E0B; border:1px solid #334155; border-radius:3px; padding:2px 4px; font-size:10px; font-weight:700;">
+                  <option value="CONSERVATIVE" selected>🛡️ Conservative (0.25% risk, 1:1.6 net)</option>
+                  <option value="BALANCED">⚖️ Balanced (0.35% risk, 1:1.5 net)</option>
+                  <option value="AGGRESSIVE">🔥 Aggressive (0.50% risk, 1:1.4 net)</option>
+                </select>
+              </div>
+              <span id="scalp-latency-msg" style="color:#64748B; font-size:9px;">Feed Latency: Normal</span>
+            </div>
+
+            <!-- Spike Readiness Gauge Box -->
+            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px; margin-bottom:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <span style="font-size:9.5px; color:#94A3B8; display:block;">SPIKE READINESS SCORE</span>
+                  <span id="scalp-readiness-score" style="font-size:16px; font-weight:900; color:#F59E0B;">28/100</span>
+                </div>
+                <div style="text-align:right;">
+                  <span id="scalp-state-badge" style="display:inline-block; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; background:rgba(148,163,184,0.15); color:#94A3B8; border:1px solid #94A3B8;">
+                    CALM (Normal Range)
+                  </span>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06); font-size:9.5px;">
+                <div>
+                  <span style="color:#64748B; display:block;">WATCHED KEY LEVEL:</span>
+                  <strong id="scalp-watched-level" style="color:#00D4FF;">Session VWAP (6.5 pts away)</strong>
+                </div>
+                <div>
+                  <span style="color:#64748B; display:block;">DIRECTIONAL LEAN:</span>
+                  <strong id="scalp-direction-lean" style="color:#CBD5E1;">UNCLEAR (Low Confidence)</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Trigger Status Card -->
+            <div id="scalp-trigger-status-card" style="margin-bottom:8px;">
+              <!-- Populated dynamically via scalpPanel.js -->
+            </div>
+
+            <!-- Historical Spike Study Stats -->
+            <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:5px; padding:6px; margin-bottom:6px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:9.5px; font-weight:700; color:#94A3B8;">EMPIRICAL SPIKE PRECISION STUDY:</span>
+                <span id="spike-study-sample-badge" style="font-size:9px; color:#FBBF24;">Sample Study Active</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:9.5px; color:#CBD5E1;">
+                <span>Precision: <strong id="spike-study-precision" style="color:#00E676;">68.4%</strong></span>
+                <span>False Alarm: <strong id="spike-study-false-alarm" style="color:#FF3B69;">31.6%</strong></span>
+              </div>
+              <div id="scalp-bt-net-return" style="font-size:9px; color:#94A3B8; margin-top:3px;">
+                Expected 30-Day Net: +₹21,450 net of Indian taxes & slippage
+              </div>
+              <button id="btn-run-spike-study" type="button" style="width:100%; margin-top:5px; background:#1E293B; border:1px solid #475569; color:#00D4FF; border-radius:4px; padding:4px; font-size:9.5px; font-weight:700; cursor:pointer;">
+                ⚡ Run Empirical Spike Study
+              </button>
+            </div>
+          </div>
+
+          <!-- Module OFF Placeholder (Zero Footprint) -->
+          <div id="scalp-module-off-placeholder" style="padding:10px 4px; text-align:center;">
+            <span style="font-size:10.5px; color:#94A3B8; display:block; margin-bottom:4px;">
+              Scalping and Spike Watch is currently <strong>DISABLED</strong>.
+            </span>
+            <span style="font-size:9.5px; color:#64748B; display:block;">
+              Toggle ON above to engage high-frequency volatility compression scanning and tight scalp execution with friction modeling.
+            </span>
+          </div>
+        </div>
+
         <!-- MODULE 6: PRE-TRADE CHECKLIST (MANDATORY GATE) -->
         <div class="card-section pre-trade-checklist-card" id="pre-trade-checklist-card" style="border: 1px solid rgba(0, 212, 255, 0.35); background: rgba(0, 212, 255, 0.04); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -820,6 +911,29 @@
             <span class="field-hint">Pre-configures mathematical capital protection limits based on your experience level.</span>
           </div>
 
+          <!-- Scalp Module Global Settings -->
+          <div class="form-row" style="background:rgba(245, 158, 11, 0.05); border:1px solid rgba(245, 158, 11, 0.3); border-radius:6px; padding:8px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <strong style="color:#F59E0B; font-size:11px;">⚡ Scalping & Spike Watch Module</strong>
+              <input type="checkbox" id="cfg-scalp-enabled" style="cursor:pointer; width:16px; height:16px;">
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <label for="cfg-scalp-preset" style="font-size:9.5px; color:#94A3B8;">Scalp Preset</label>
+                <select id="cfg-scalp-preset" style="width:100%; background:#0B0F19; color:#F59E0B; border:1px solid #334155; border-radius:4px; padding:3px; font-size:10px;">
+                  <option value="CONSERVATIVE" selected>Conservative (0.25% Risk)</option>
+                  <option value="BALANCED">Balanced (0.35% Risk)</option>
+                  <option value="AGGRESSIVE">Aggressive (0.50% Risk)</option>
+                </select>
+              </div>
+              <div>
+                <label for="cfg-scalp-max-latency" style="font-size:9.5px; color:#94A3B8;">Max Latency (ms)</label>
+                <input type="number" id="cfg-scalp-max-latency" value="1500" min="300" max="3000" step="100" style="width:100%; background:#0B0F19; color:#E2E8F0; border:1px solid #334155; border-radius:4px; padding:3px; font-size:10px;">
+              </div>
+            </div>
+            <span class="field-hint" style="margin-top:4px;">When disabled, module has 0 footprint. Automatically pauses execution if feed latency exceeds limit.</span>
+          </div>
+
           <div class="form-row">
             <label for="cfg-cooldown-mins">Post-Loss Cool-Down (Minutes)</label>
             <input type="number" id="cfg-cooldown-mins" value="20" min="5" max="60">
@@ -909,6 +1023,34 @@
                 <label for="cfg-grade-b-threshold" style="font-size:10px;">Grade B Min Score</label>
                 <input type="number" id="cfg-grade-b-threshold" value="65" min="50" max="79" style="width:100%;">
               </div>
+            </div>
+          </div>
+
+          <!-- Scalping & Spike Watch Settings -->
+          <div class="card-section" style="border:1px solid rgba(0, 212, 255, 0.35); background:rgba(0, 212, 255, 0.04); border-radius:6px; padding:8px; margin-bottom:12px;">
+            <div style="font-size:11px; font-weight:800; color:#00D4FF; margin-bottom:6px;">⚡ Scalping &amp; Spike Watch Settings</div>
+            
+            <div class="form-row" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+              <div>
+                <label for="cfg-scalp-enabled" style="margin-bottom:2px; font-size:11px;">Enable Scalp &amp; Spike Engine</label>
+                <span class="field-hint" style="display:block;">Zero compute/memory footprint when toggled OFF.</span>
+              </div>
+              <input type="checkbox" id="cfg-scalp-enabled" style="width:18px; height:18px;">
+            </div>
+
+            <div class="form-row" style="margin-bottom:6px;">
+              <label for="cfg-scalp-preset" style="font-size:11px;">Execution Preset</label>
+              <select id="cfg-scalp-preset">
+                <option value="CONSERVATIVE" selected>Conservative (0.25% Risk, 1:1.6 Net R:R)</option>
+                <option value="BALANCED">Balanced (0.35% Risk, 1:1.5 Net R:R)</option>
+                <option value="AGGRESSIVE">Aggressive (0.50% Risk, 1:1.4 Net R:R)</option>
+              </select>
+            </div>
+
+            <div class="form-row" style="margin-bottom:6px;">
+              <label for="cfg-scalp-max-latency" style="font-size:11px;">Max Allowable Latency (ms)</label>
+              <input type="number" id="cfg-scalp-max-latency" value="1500" step="100" min="500" max="3000">
+              <span class="field-hint">Auto-pauses scalping if WebSocket latency exceeds this threshold (default 1500ms).</span>
             </div>
           </div>
 

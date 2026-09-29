@@ -79,11 +79,16 @@
     // 2. Render Universal Live HUD
     renderLiveNiftyHud(root, data, activeSymbol, isNifty);
 
+    // 2b. Render Scalp & Spike HUD if active
+    if (data.scalpSetup && data.scalpSetup.isEnabled) {
+      renderScalpHud(root, data.scalpSetup);
+    }
+
     // 3. Render Top-Right Mini Control HUD
     renderControlHud(root, data);
 
     // 4. Render SVG Price Projections (1-Month S/R, Entry, SL, Targets, Key Levels)
-    if (activeLayers.lines && (data.levels || data.srLevels || data.keyLevels)) {
+    if (activeLayers.lines && (data.levels || data.srLevels || data.keyLevels || data.scalpSetup)) {
       renderSvgOverlay(root, rect, data);
     }
 
@@ -277,7 +282,12 @@
       keyLevels.orl,
       sr.majorResistance?.price,
       sr.majorSupport?.price,
-      sr.intermediatePivot?.price
+      sr.intermediatePivot?.price,
+      data.scalpSetup?.readiness?.compressionHigh,
+      data.scalpSetup?.readiness?.compressionLow,
+      data.scalpSetup?.entryPrice,
+      data.scalpSetup?.stopLoss,
+      data.scalpSetup?.target1
     ].filter((p) => typeof p === 'number' && !isNaN(p));
 
     if (prices.length === 0) return;
@@ -348,6 +358,29 @@
       drawHorizontalLine(svg, rect.width, getY(levels.target2), '#00E676', `TP2: ${levels.target2} [Runner]`, 'dashed');
     }
 
+    // 5. Scalp Compression Zone Box & Watched Level
+    if (data.scalpSetup && data.scalpSetup.isEnabled && data.scalpSetup.readiness) {
+      const r = data.scalpSetup.readiness;
+      if (r.compressionHigh && r.compressionLow && r.compressionHigh > r.compressionLow) {
+        const yTop = getY(r.compressionHigh);
+        const yBottom = getY(r.compressionLow);
+        const compHeight = Math.max(4, yBottom - yTop);
+
+        const compBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        compBox.setAttribute('x', '70');
+        compBox.setAttribute('y', yTop.toString());
+        compBox.setAttribute('width', (rect.width - 140).toString());
+        compBox.setAttribute('height', compHeight.toString());
+        compBox.setAttribute('fill', r.state === 'SPIKE_RISK_HIGH' ? 'rgba(255, 59, 105, 0.08)' : 'rgba(251, 191, 36, 0.08)');
+        compBox.setAttribute('stroke', r.state === 'SPIKE_RISK_HIGH' ? '#FF3B69' : '#FBBF24');
+        compBox.setAttribute('stroke-width', '1.5');
+        compBox.setAttribute('stroke-dasharray', '3 3');
+        svg.appendChild(compBox);
+
+        drawHorizontalLine(svg, rect.width, (yTop + yBottom) / 2, r.state === 'SPIKE_RISK_HIGH' ? '#FF3B69' : '#FBBF24', `SPIKE WATCH ZONE (${r.compressionPts} pts)`, 'dashed');
+      }
+    }
+
     root.appendChild(svg);
   }
 
@@ -388,6 +421,75 @@
     txt.setAttribute('font-family', 'Inter, system-ui, sans-serif');
     txt.textContent = labelText;
     svg.appendChild(txt);
+  }
+
+  function renderScalpHud(root, scalpSetup) {
+    const existing = document.getElementById('tradesight-scalp-spike-hud');
+    if (existing) existing.remove();
+
+    if (!scalpSetup || !scalpSetup.isEnabled) return;
+
+    const readiness = scalpSetup.readiness || { score: 0, state: 'CALM', stateLabel: 'CALM', directionLean: 'UNCLEAR' };
+    const trigger = scalpSetup.trigger || { isTriggered: false, direction: 'NONE', triggerType: 'NONE' };
+    const isTriggered = scalpSetup.isActionable && trigger.isTriggered;
+
+    let stateColor = '#94A3B8';
+    let pulseClass = '';
+
+    if (readiness.state === 'SPIKE_RISK_HIGH') {
+      stateColor = '#FF3B69';
+      pulseClass = 'tradesight-pulse-crimson';
+    } else if (readiness.state === 'BUILDING') {
+      stateColor = '#FBBF24';
+      pulseClass = 'tradesight-pulse-amber';
+    }
+
+    const hud = document.createElement('div');
+    hud.id = 'tradesight-scalp-spike-hud';
+    hud.className = `tradesight-scalp-hud ${pulseClass}`;
+
+    const topFactors = (readiness.factors || []).slice(0, 2).map((f) => `${f.name}: +${f.weightedScore.toFixed(0)}`).join(' • ');
+
+    hud.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:5px;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span style="font-size:11px; font-weight:800; color:#00D4FF;">⚡ SPIKE WATCH</span>
+          <span style="font-size:9.5px; padding:1px 5px; border-radius:3px; font-weight:800; border:1px solid ${stateColor}; color:${stateColor};">
+            ${readiness.stateLabel}
+          </span>
+        </div>
+        <div style="font-size:12px; font-weight:900; color:${stateColor};">
+          ${readiness.score}/100
+        </div>
+      </div>
+      <div style="font-size:10px; color:#94A3B8; margin-bottom:4px; display:flex; justify-content:space-between;">
+        <span>Watched: <strong>${readiness.watchedKeyLevel || 'Pivot'}</strong> (${(readiness.distanceToLevel || 0).toFixed(1)}p)</span>
+        <span style="color:${readiness.directionLean === 'UP' ? '#00E676' : readiness.directionLean === 'DOWN' ? '#FF3B69' : '#CBD5E1'}; font-weight:700;">
+          Lean: ${readiness.directionLean}
+        </span>
+      </div>
+      ${topFactors ? `<div style="font-size:9px; color:#64748B; margin-bottom:5px;">Drivers: ${topFactors}</div>` : ''}
+      ${isTriggered ? `
+        <div style="background:rgba(0,230,118,0.12); border:1px solid #00E676; border-radius:6px; padding:6px 8px; margin-top:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong style="color:#00E676; font-size:11px;">🚀 SCALP ${scalpSetup.direction} TRIGGERED</strong>
+            <span style="font-size:9px; color:#FBBF24; font-weight:800;">Net 1:${scalpSetup.costAnalysis?.netRR || '1.5'} R</span>
+          </div>
+          <div style="font-size:9.5px; color:#CBD5E1; margin-top:2px;">
+            Entry: ${scalpSetup.entryPrice} | SL: ${scalpSetup.stopLoss} | T1: ${scalpSetup.target1}
+          </div>
+          <div style="font-size:8.5px; color:#94A3B8; margin-top:2px;">
+            ${scalpSetup.costAnalysis?.summaryMessage || 'Friction charges factored.'}
+          </div>
+        </div>
+      ` : `
+        <div style="background:rgba(255,255,255,0.03); border:1px dashed #334155; border-radius:5px; padding:4px 6px; font-size:9px; color:#94A3B8; margin-top:4px;">
+          Awaiting confirmation trigger: Breakout > 1.2x ATR with volume surge.
+        </div>
+      `}
+    `;
+
+    root.appendChild(hud);
   }
 
   function clearOverlay() {
