@@ -31,6 +31,9 @@ import { IndicatorTogglesUI } from './indicatorToggles.js';
 import { DataProvider } from '../services/dataProvider.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
+import { TrendlineEngine, TRENDLINE_PRESETS, DEFAULT_TRENDLINE_PRO_CONFIG } from '../indicators/trendlinePro.js';
+import { LevelsEngine, LEVELS_PRESETS, DEFAULT_LEVELS_CONFIG } from '../indicators/levelsEngine.js';
+import { ConfluenceEngine, DEFAULT_CONFLUENCE_CONFIG } from '../confluence/confluenceEngine.js';
 
 let appConfig = {};
 let latestSignal = null;
@@ -43,6 +46,11 @@ let isRiskLocked = false;
 let indicatorManager = null;
 let indicatorTogglesUI = null;
 let latestIndicatorState = null;
+
+// Structure & Confluence module instances (initialized lazily from config)
+let _tlEngine = null;
+let _lvEngine = null;
+let _latestConfluenceResult = null;
 
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', async () => {
@@ -103,6 +111,9 @@ async function initApp() {
     }
   });
   indicatorTogglesUI.init();
+
+  // Initialize Structure & Confluence Engines from stored config
+  initStructureConfluenceModule();
 
   // Probe TradingView chart
   probeTradingViewChart();
@@ -173,7 +184,29 @@ async function loadUserConfig() {
         nsdtL2: res.ts_nsdt_l2 || 10,
         nsdtL3: res.ts_nsdt_l3 || 20,
         clusterBandAtr: res.ts_cluster_band || 0.15,
-        tlBufferAtr: res.ts_tl_buffer || 0.1
+        tlBufferAtr: res.ts_tl_buffer || 0.1,
+
+        // Structure & Confluence engine config
+        structTlEnabled:      res.ts_struct_tl_enabled === true,
+        structLvlEnabled:     res.ts_struct_lvl_enabled === true,
+        structTlPreset:       res.ts_struct_tl_preset   || 'NIFTY_5M_STRUCTURE',
+        structLvlPreset:      res.ts_struct_lvl_preset  || 'NIFTY_STANDARD_SWING',
+        structTlLeftBars:     res.ts_struct_tl_left     || 30,
+        structTlRightBars:    res.ts_struct_tl_right    || 30,
+        structTlBreakoutAtr:  res.ts_struct_tl_brk      || 0.10,
+        structTlRetestAtr:    res.ts_struct_tl_ret      || 0.20,
+        structTlZoneBandAtr:  res.ts_struct_tl_zb       || 0.20,
+        structTlMinTouches:   res.ts_struct_tl_mt       || 2,
+        structLvlSmall:       res.ts_struct_lvl_s       || 5,
+        structLvlMedium:      res.ts_struct_lvl_m       || 10,
+        structLvlLarge:       res.ts_struct_lvl_l       || 20,
+        structLvlClusterAtr:  res.ts_struct_lvl_cl      || 0.25,
+        structLvlReactionAtr: res.ts_struct_lvl_re      || 0.30,
+        structLvlTopN:        res.ts_struct_lvl_top     || 6,
+        structCfGradeA:       res.ts_struct_cf_ga       || 80,
+        structCfGradeB:       res.ts_struct_cf_gb       || 65,
+        structCfMinRr:        res.ts_struct_cf_rr       || 1.5,
+        structCfObstacleAtr:  res.ts_struct_cf_obs      || 1.0
       };
       resolve(appConfig);
     });
@@ -577,6 +610,40 @@ async function runNiftyScan() {
     // 9. Render Sidepanel UI
     renderNextMoveHero(latestSignal, driverData, detectedPattern, srData, srConfirmation);
     renderTradeQualityCard(qualityScore);
+
+    // 9b. Evaluate Structure & Confluence and update panel card
+    if (_tlEngine || _lvEngine) {
+      const tlEnabled = appConfig.structTlEnabled && _tlEngine;
+      const lvEnabled = appConfig.structLvlEnabled && _lvEngine;
+
+      if (tlEnabled) _tlEngine.update(candles, { lastClosed: true });
+      if (lvEnabled) _lvEngine.update(candles, {
+        lastClosed: true,
+        externalLevels: { vwap: srData?.vwap || currentPrice }
+      });
+
+      const tlState = tlEnabled ? _tlEngine.getState() : null;
+      const lvState = lvEnabled ? _lvEngine.getState() : null;
+
+      _latestConfluenceResult = ConfluenceEngine.evaluate({
+        trendlineState: tlState && tlState.ready ? { ...tlState, isEnabled: true } : null,
+        levelsState:    lvState && lvState.ready ? { ...lvState, isEnabled: true } : null,
+        currentPrice,
+        vwap:           srData?.vwap || currentPrice,
+        regime:         finalSignal.regime,
+        triggerCandle:  candles[candles.length - 1],
+        driverData,
+        sessionInfo,
+        eventRisk:      NoTradeFilters.isInsideEventBuffer(now).isBlocked
+      }, {
+        gradeAThreshold:       appConfig.structCfGradeA   || 80,
+        gradeBThreshold:       appConfig.structCfGradeB   || 65,
+        minRrRatio:            appConfig.structCfMinRr    || 1.5,
+        obstacleAtrThreshold:  appConfig.structCfObstacleAtr || 1.0
+      });
+
+      renderStructureConfluenceCard(_latestConfluenceResult, tlState, lvState);
+    }
 
     // 10. Auto-Draw on TradingView Overlay
     dispatchOverlayToChart(latestSignal, driverData, keyLevels, srData);
@@ -1542,3 +1609,326 @@ function generateHistoricalNiftyBars(basePrice, count = 60) {
   }
   return bars;
 }
+
+/* ═══════════════════════════════════════════════════════
+   STRUCTURE & CONFLUENCE MODULE
+   Initialisation, panel render, and settings helpers
+═══════════════════════════════════════════════════════ */
+
+/**
+ * Build / rebuild TrendlineEngine + LevelsEngine from current appConfig.
+ * Called once on boot and whenever the user saves the Config tab.
+ */
+function initStructureConfluenceModule() {
+  // Build Trendline Engine
+  const tlCfg = {
+    ...DEFAULT_TRENDLINE_PRO_CONFIG,
+    isEnabled:        appConfig.structTlEnabled || false,
+    leftBars:         appConfig.structTlLeftBars    || 30,
+    rightBars:        appConfig.structTlRightBars   || 30,
+    breakoutAtrBuffer:appConfig.structTlBreakoutAtr || 0.10,
+    retestAtrBuffer:  appConfig.structTlRetestAtr   || 0.20,
+    zoneBandAtr:      appConfig.structTlZoneBandAtr || 0.20,
+    minTouches:       appConfig.structTlMinTouches  || 2
+  };
+  _tlEngine = new TrendlineEngine(tlCfg);
+
+  // Build Levels Engine
+  const lvCfg = {
+    ...DEFAULT_LEVELS_CONFIG,
+    isEnabled:      appConfig.structLvlEnabled     || false,
+    lookbackSmall:  appConfig.structLvlSmall       || 5,
+    lookbackMedium: appConfig.structLvlMedium      || 10,
+    lookbackLarge:  appConfig.structLvlLarge       || 20,
+    clusterAtr:     appConfig.structLvlClusterAtr  || 0.25,
+    reactionAtr:    appConfig.structLvlReactionAtr || 0.30,
+    topNZones:      appConfig.structLvlTopN        || 6
+  };
+  _lvEngine = new LevelsEngine(lvCfg);
+
+  // Sync live-tab checkbox states
+  const tlChk  = document.getElementById('live-trendline-toggle');
+  const lvChk  = document.getElementById('live-levels-toggle');
+  if (tlChk) tlChk.checked  = appConfig.structTlEnabled  || false;
+  if (lvChk) lvChk.checked  = appConfig.structLvlEnabled || false;
+
+  // Wire live-tab checkboxes
+  if (tlChk && !tlChk._bound) {
+    tlChk._bound = true;
+    tlChk.addEventListener('change', () => {
+      appConfig.structTlEnabled = tlChk.checked;
+      _tlEngine.setEnabled(tlChk.checked);
+      chrome.storage.local.set({ ts_struct_tl_enabled: tlChk.checked });
+      renderStructureConfluenceCard(null, null, null); // clear stale card
+    });
+  }
+  if (lvChk && !lvChk._bound) {
+    lvChk._bound = true;
+    lvChk.addEventListener('change', () => {
+      appConfig.structLvlEnabled = lvChk.checked;
+      _lvEngine.updateConfig({ isEnabled: lvChk.checked });
+      chrome.storage.local.set({ ts_struct_lvl_enabled: lvChk.checked });
+      renderStructureConfluenceCard(null, null, null);
+    });
+  }
+
+  // Populate Config tab fields
+  _populateStructureConfigTab();
+}
+
+/** Populate Config tab form fields from appConfig */
+function _populateStructureConfigTab() {
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+  setChk('cfg-trendline-enabled', appConfig.structTlEnabled  || false);
+  setChk('cfg-levels-enabled',    appConfig.structLvlEnabled || false);
+  setVal('cfg-tl-left-bars',      appConfig.structTlLeftBars    || 30);
+  setVal('cfg-tl-right-bars',     appConfig.structTlRightBars   || 30);
+  setVal('cfg-tl-breakout-atr',   appConfig.structTlBreakoutAtr || 0.10);
+  setVal('cfg-tl-retest-atr',     appConfig.structTlRetestAtr   || 0.20);
+  setVal('cfg-tl-zone-band-atr',  appConfig.structTlZoneBandAtr || 0.20);
+  setVal('cfg-tl-min-touches',    appConfig.structTlMinTouches  || 2);
+  setVal('cfg-lvl-small',         appConfig.structLvlSmall      || 5);
+  setVal('cfg-lvl-medium',        appConfig.structLvlMedium     || 10);
+  setVal('cfg-lvl-large',         appConfig.structLvlLarge      || 20);
+  setVal('cfg-lvl-cluster-atr',   appConfig.structLvlClusterAtr  || 0.25);
+  setVal('cfg-lvl-reaction-atr',  appConfig.structLvlReactionAtr || 0.30);
+  setVal('cfg-lvl-top-n',         appConfig.structLvlTopN        || 6);
+  setVal('cfg-cf-grade-a',        appConfig.structCfGradeA      || 80);
+  setVal('cfg-cf-grade-b',        appConfig.structCfGradeB      || 65);
+  setVal('cfg-cf-min-rr',         appConfig.structCfMinRr       || 1.5);
+  setVal('cfg-cf-obstacle-atr',   appConfig.structCfObstacleAtr || 1.0);
+}
+
+/**
+ * Update the Structure & Confluence panel card with current engine results.
+ * All DOM ops are guarded by null-check so no throw if panel is collapsed.
+ * @param {Object|null} cf   - ConfluenceEngine.evaluate() result
+ * @param {Object|null} tls  - TrendlineEngine.getState()
+ * @param {Object|null} lvs  - LevelsEngine.getState()
+ */
+function renderStructureConfluenceCard(cf, tls, lvs) {
+  const $ = (id) => document.getElementById(id);
+
+  const tlOn = appConfig.structTlEnabled  && _tlEngine;
+  const lvOn = appConfig.structLvlEnabled && _lvEngine;
+
+  // Show/hide off-notice
+  const offNotice = $('structure-off-notice');
+  const activeDiv = $('structure-content-active');
+  if (offNotice) offNotice.style.display = (!tlOn && !lvOn) ? '' : 'none';
+  if (activeDiv) activeDiv.style.display = (!tlOn && !lvOn) ? 'none' : '';
+
+  if (!cf) {
+    // Engines toggled off or no data yet
+    const badge = $('confluence-grade-badge');
+    if (badge) { badge.textContent = '—'; badge.style.background = 'rgba(99,102,241,0.2)'; badge.style.color = '#818CF8'; }
+    const scoreVal = $('confluence-score-val');
+    if (scoreVal) scoreVal.textContent = '—/100';
+    const scoreBar = $('confluence-score-bar');
+    if (scoreBar) scoreBar.style.width = '0%';
+    return;
+  }
+
+  // Grade colours
+  const GRADE_COLORS = { A: '#22C55E', B: '#F59E0B', C: '#EF4444', none: '#818CF8' };
+  const grade = cf.grade || 'none';
+  const gradeColor = GRADE_COLORS[grade] || '#818CF8';
+
+  // Badge
+  const badge = $('confluence-grade-badge');
+  if (badge) {
+    badge.textContent  = grade === 'none' ? '—' : `Grade ${grade}`;
+    badge.style.color  = gradeColor;
+    badge.style.background = `rgba(${grade === 'A' ? '34,197,94' : grade === 'B' ? '245,158,11' : grade === 'C' ? '239,68,68' : '99,102,241'},0.15)`;
+    badge.style.borderColor = gradeColor;
+  }
+
+  // Score bar
+  const score = cf.score || 0;
+  const scoreVal = $('confluence-score-val');
+  const scoreBar = $('confluence-score-bar');
+  if (scoreVal) { scoreVal.textContent = `${Math.round(score)}/100`; scoreVal.style.color = gradeColor; }
+  if (scoreBar) {
+    scoreBar.style.width = `${Math.round(score)}%`;
+    scoreBar.style.background = `linear-gradient(90deg, ${grade === 'A' ? '#16A34A, #22C55E' : grade === 'B' ? '#D97706, #F59E0B' : grade === 'C' ? '#DC2626, #EF4444' : '#4F46E5, #818CF8'})`;
+  }
+
+  // Direction
+  const dirEl = $('confluence-direction-val');
+  if (dirEl) {
+    const dirLabel = cf.direction === 'long' ? '🟢 LONG' : cf.direction === 'short' ? '🔴 SHORT' : '⚪ NO BIAS';
+    const dirColor = cf.direction === 'long' ? '#22C55E' : cf.direction === 'short' ? '#EF4444' : '#94A3B8';
+    dirEl.textContent = dirLabel;
+    dirEl.style.color = dirColor;
+  }
+
+  // Grade reason
+  const reasonEl = $('confluence-grade-reason');
+  if (reasonEl) reasonEl.textContent = cf.explanation || 'Insufficient structural sources';
+
+  // Nearest Resistance
+  const res = lvs?.nearestResistance;
+  const resPrice = $('nearest-res-price');
+  const resDet   = $('nearest-res-detail');
+  if (resPrice) resPrice.textContent = res ? `₹${res.zone.centerPrice}` : '—';
+  if (resDet)   resDet.textContent   = res ? `${res.distancePts > 0 ? '+' : ''}${res.distancePts} pts (${res.distanceAtr}× ATR) · Score ${res.zone.strengthScore}` : 'None above';
+
+  // Nearest Support
+  const sup = lvs?.nearestSupport;
+  const supPrice = $('nearest-sup-price');
+  const supDet   = $('nearest-sup-detail');
+  if (supPrice) supPrice.textContent = sup ? `₹${sup.zone.centerPrice}` : '—';
+  if (supDet)   supDet.textContent   = sup ? `-${Math.abs(sup.distancePts)} pts (${sup.distanceAtr}× ATR) · Score ${sup.zone.strengthScore}` : 'None below';
+
+  // Active trendline
+  const tlEl = $('active-trendline-val');
+  if (tlEl) {
+    if (tls?.activeTrendlines?.length) {
+      const tl = tls.activeTrendlines[0];
+      tlEl.textContent = `${tl.direction === 'up' ? '↗' : '↘'} ${tl.direction.toUpperCase()} TL @ ${tl.currentValue?.toFixed(1)} (${tl.touches} touches)`;
+    } else {
+      tlEl.textContent = tls ? 'No confirmed trendline yet' : 'Trendline OFF';
+    }
+  }
+
+  // Last structure event
+  const evEl = $('last-struct-event-val');
+  if (evEl) {
+    const ev = lvs?.lastEvent || tls?.lastEvent;
+    const EVENT_ICONS = { BREAK: 'B', RETEST_HOLD: 'RT', SWEEP: 'SW', REJECTION: 'REJ', FAILED_BREAK: 'FB' };
+    if (ev) {
+      const icon = EVENT_ICONS[ev.type] || ev.type;
+      evEl.textContent = `${icon} ${ev.direction === 'BULLISH' ? '▲' : '▼'} @ ₹${ev.price} (Q:${ev.quality})`;
+    } else {
+      evEl.textContent = '—';
+    }
+  }
+
+  // Obstacle alert
+  const obsRow  = $('obstacle-alert-row');
+  const obsTxt  = $('obstacle-alert-text');
+  const hasObs  = cf.warnings?.some(w => w.toLowerCase().includes('obstacle') || w.toLowerCase().includes('room'));
+  if (obsRow)  obsRow.style.display  = hasObs ? '' : 'none';
+  if (obsTxt && hasObs) obsTxt.textContent = cf.warnings.find(w => w.toLowerCase().includes('obstacle') || w.toLowerCase().includes('room')) || 'Obstacle zone detected.';
+
+  // Score factors list
+  const factorsList = $('struct-factors-list');
+  if (factorsList && cf.factors?.length) {
+    factorsList.innerHTML = cf.factors.map(f => {
+      const sign  = f.points >= 0 ? '+' : '';
+      const color = f.points >= 0 ? '#22C55E' : '#EF4444';
+      return `<div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+        <span style="color:#94A3B8; flex:1;">${f.name}</span>
+        <span style="color:${color}; font-weight:700; margin-left:6px; flex-shrink:0;">${sign}${f.points} pts</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Warnings box
+  const warnBox = $('struct-warnings-box');
+  if (warnBox) {
+    const warnList = (cf.warnings || []).filter(w => !w.toLowerCase().includes('obstacle'));
+    warnBox.style.display = warnList.length ? '' : 'none';
+    warnBox.innerHTML = warnList.map(w => `• ${w}`).join('<br>');
+  }
+
+  // Missing modules notice
+  const missingEl = $('struct-missing-modules');
+  if (missingEl && cf.missingModules?.length) {
+    missingEl.style.display = '';
+    missingEl.textContent = `Inactive: ${cf.missingModules.join(' · ')}`;
+  } else if (missingEl) {
+    missingEl.style.display = 'none';
+  }
+
+  // Pivot lag for trendline
+  const lagWarn = $('tl-pivot-lag-warning');
+  const lagTxt  = $('tl-pivot-lag-text');
+  if (lagWarn && tls) {
+    const lag = (appConfig.structTlLeftBars || 30) + (appConfig.structTlRightBars || 30);
+    lagWarn.style.display = '';
+    if (lagTxt) lagTxt.textContent = `Pivot confirmation lag: ${lag} bars (${Math.round(lag * 5 / 60)} min on 5m). Delayed by design — avoids repainting.`;
+  } else if (lagWarn) {
+    lagWarn.style.display = 'none';
+  }
+}
+
+/* ── Config-tab preset + save helpers (exposed on window for inline onclick) ── */
+
+window._applyTlPreset = function(presetKey) {
+  if (!presetKey) return;
+  const p = TRENDLINE_PRESETS[presetKey];
+  if (!p) return;
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('cfg-tl-left-bars',     p.leftBars         || 30);
+  setVal('cfg-tl-right-bars',    p.rightBars         || 30);
+  setVal('cfg-tl-breakout-atr',  p.breakoutAtrBuffer || 0.10);
+  setVal('cfg-tl-retest-atr',    p.retestAtrBuffer   || 0.20);
+  setVal('cfg-tl-zone-band-atr', p.zoneBandAtr       || 0.20);
+};
+
+window._resetTlDefaults = function() {
+  document.getElementById('cfg-tl-preset').value = 'NIFTY_5M_STRUCTURE';
+  window._applyTlPreset('NIFTY_5M_STRUCTURE');
+};
+
+window._applyLevelsPreset = function(presetKey) {
+  if (!presetKey) return;
+  const p = LEVELS_PRESETS[presetKey];
+  if (!p) return;
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('cfg-lvl-small',        p.lookbackSmall   || 5);
+  setVal('cfg-lvl-medium',       p.lookbackMedium  || 10);
+  setVal('cfg-lvl-large',        p.lookbackLarge   || 20);
+  setVal('cfg-lvl-cluster-atr',  p.clusterAtr      || 0.25);
+  if (p.reactionAtr) setVal('cfg-lvl-reaction-atr', p.reactionAtr);
+};
+
+window._resetLevelsDefaults = function() {
+  document.getElementById('cfg-levels-preset').value = 'NIFTY_STANDARD_SWING';
+  window._applyLevelsPreset('NIFTY_STANDARD_SWING');
+};
+
+window._saveStructureConfig = function() {
+  const getVal = (id, fallback) => { const el = document.getElementById(id); return el ? parseFloat(el.value) || fallback : fallback; };
+  const getChk = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
+  const getInt = (id, fallback) => { const el = document.getElementById(id); return el ? parseInt(el.value, 10) || fallback : fallback; };
+
+  const newCfg = {
+    ts_struct_tl_enabled:  getChk('cfg-trendline-enabled'),
+    ts_struct_lvl_enabled: getChk('cfg-levels-enabled'),
+    ts_struct_tl_preset:   document.getElementById('cfg-tl-preset')?.value || 'NIFTY_5M_STRUCTURE',
+    ts_struct_lvl_preset:  document.getElementById('cfg-levels-preset')?.value || 'NIFTY_STANDARD_SWING',
+    ts_struct_tl_left:     getInt('cfg-tl-left-bars', 30),
+    ts_struct_tl_right:    getInt('cfg-tl-right-bars', 30),
+    ts_struct_tl_brk:      getVal('cfg-tl-breakout-atr', 0.10),
+    ts_struct_tl_ret:      getVal('cfg-tl-retest-atr', 0.20),
+    ts_struct_tl_zb:       getVal('cfg-tl-zone-band-atr', 0.20),
+    ts_struct_tl_mt:       getInt('cfg-tl-min-touches', 2),
+    ts_struct_lvl_s:       getInt('cfg-lvl-small', 5),
+    ts_struct_lvl_m:       getInt('cfg-lvl-medium', 10),
+    ts_struct_lvl_l:       getInt('cfg-lvl-large', 20),
+    ts_struct_lvl_cl:      getVal('cfg-lvl-cluster-atr', 0.25),
+    ts_struct_lvl_re:      getVal('cfg-lvl-reaction-atr', 0.30),
+    ts_struct_lvl_top:     getInt('cfg-lvl-top-n', 6),
+    ts_struct_cf_ga:       getInt('cfg-cf-grade-a', 80),
+    ts_struct_cf_gb:       getInt('cfg-cf-grade-b', 65),
+    ts_struct_cf_rr:       getVal('cfg-cf-min-rr', 1.5),
+    ts_struct_cf_obs:      getVal('cfg-cf-obstacle-atr', 1.0)
+  };
+
+  chrome.storage.local.set(newCfg, () => {
+    // Reload config and rebuild engines
+    loadUserConfig().then(() => {
+      initStructureConfluenceModule();
+      const btn = document.getElementById('cfg-structure-save-btn');
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Saved!';
+        btn.style.color = '#22C55E';
+        setTimeout(() => { btn.textContent = orig; btn.style.color = '#A5B4FC'; }, 2000);
+      }
+    });
+  });
+};
