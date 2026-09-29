@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TradeSight AI - NIFTY 50 Engine</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M4 14V18M4 18V21M4 18H2M4 18H6" stroke="#00E676" stroke-width="2" stroke-linecap="round"/>
+            <path d="M12 6V11M12 11V16M12 11H9M12 11H15" stroke="#00D4FF" stroke-width="2" stroke-linecap="round"/>
+            <path d="M20 3V8M20 8V12M20 8H17M20 8H23" stroke="#FF9933" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="12" cy="12" r="10" stroke="rgba(255, 153, 51, 0.4)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>TradeSight <span class="ai-badge">NIFTY 50</span></h1>
+          <p class="tagline">30-Yr Institutional Indian Index Engine</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="status-dot" id="system-status-dot"></span>
+        <span class="status-label" id="system-status-text">Ready</span>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="tab-live">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><path d="m10 15 5-3-5-3v6z"/>
+        </svg>
+        Next Move
+      </button>
+      <button class="nav-tab" data-tab="tab-drivers">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+        Drivers & VIX
+      </button>
+      <button class="nav-tab" data-tab="tab-strategies">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+        Strategies
+      </button>
+      <button class="nav-tab" data-tab="tab-journal">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
+          <path d="M6 6h10M6 10h10M6 14h6"/>
+        </svg>
+        Journal & Backtest
+      </button>
+      <button class="nav-tab" data-tab="tab-settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+        </svg>
+        Config
+      </button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="tab-content-area">
+
+      <!-- ================= TAB 1: LIVE NEXT MOVE ================= -->
+      <section id="tab-live" class="tab-panel active">
+        <!-- Live Nifty Meta Bar -->
+        <div class="chart-meta-bar">
+          <div class="meta-item">
+            <span class="meta-lbl">INDEX</span>
+            <span class="meta-val" id="meta-symbol">NIFTY 50</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-lbl">INTERVAL</span>
+            <span class="meta-val" id="meta-timeframe">5m</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-lbl">LIVE PRICE</span>
+            <span class="meta-val" id="meta-price">--.--</span>
+          </div>
+        </div>
+
+        <!-- Symbol Warning (if non-nifty chart is open) -->
+        <div id="symbol-warning-card" class="notice-card warning-notice hidden">
+          ⚠️ <strong>Non-Nifty Chart Detected:</strong> TradeSight AI is calibrated exclusively for <strong>NIFTY 50</strong>. Switch to NIFTY on TradingView for calibrated signals.
+        </div>
+
+        <!-- Scan Button Container -->
+        <div class="scan-action-box">
+          <button id="btn-scan-nifty" class="btn-scan-primary">
+            <span class="btn-icon">⚡</span>
+            <span class="btn-text">EVALUATE NIFTY NEXT MOVE</span>
+          </button>
+          <div class="scanner-laser" id="scanner-laser"></div>
+        </div>
+
+        <!-- Next Move Hero Card -->
+        <div class="next-move-hero" id="next-move-hero">
+          <div class="hero-top-row">
+            <div class="hero-signal-badge hud-signal-wait" id="hero-signal">WAIT</div>
+            <div class="hero-meta">
+              <span class="hero-strategy" id="hero-strategy">Evaluating Market Regime...</span>
+              <span class="hero-conf" id="hero-confidence">0% Confidence</span>
+            </div>
+          </div>
+
+          <div class="market-regime-bar" id="hero-regime">
+            Regime: Scanning Active Candles...
+          </div>
+
+          <p class="hero-rationale" id="hero-rationale">
+            Rule engine is monitoring 5m candle closes and Nifty drivers. Default is WAIT until all confluence criteria align.
+          </p>
+        </div>
+
+        <!-- Market Pressure Meter -->
+        <div class="card-section">
+          <div class="section-title">
+            <span>Market Pressure Score</span>
+            <span class="pressure-badge" id="hero-pressure-score">0 / 100</span>
+          </div>
+          <div class="pressure-track">
+            <div class="pressure-marker" id="pressure-marker" style="left: 50%;"></div>
+          </div>
+          <div class="pressure-legend">
+            <span>-100 (Bearish)</span>
+            <span>0 (Neutral)</span>
+            <span>+100 (Bullish)</span>
+          </div>
+
+          <div class="driver-highlights">
+            <div class="driver-col">
+              <span class="sub-lbl text-emerald">TOP SUPPORTING DRIVERS</span>
+              <ul class="mini-list" id="hero-supporting-drivers">
+                <li>Awaiting scan...</li>
+              </ul>
+            </div>
+            <div class="driver-col">
+              <span class="sub-lbl text-crimson">TOP OPPOSING DRIVERS</span>
+              <ul class="mini-list" id="hero-opposing-drivers">
+                <li>Awaiting scan...</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pattern at Key Level Card -->
+        <div class="card-section">
+          <div class="section-title">
+            <span>🕯️ Candlestick Pattern Detection</span>
+            <span class="status-pill" id="hero-pattern-location">Location Confluence</span>
+          </div>
+          <div class="pattern-detail-row">
+            <strong id="hero-pattern-name">No Active Pattern</strong>
+            <span class="pattern-desc" id="hero-pattern-desc">Patterns in the middle of nowhere are automatically filtered.</span>
+          </div>
+        </div>
+
+        <!-- Trade Levels & Options Suggestion Card -->
+        <div class="card-section" id="hero-trade-levels-card">
+          <div class="section-title">
+            <span>🎯 Trade Execution (Min 1:2 R:R)</span>
+            <span class="rr-badge" id="hero-trade-rr">1:2.0+</span>
+          </div>
+          <div class="level-grid">
+            <div class="level-box entry-box">
+              <span class="lbl">TRIGGER ENTRY</span>
+              <span class="val" id="hero-level-entry">--</span>
+            </div>
+            <div class="level-box sl-box">
+              <span class="lbl">STOP LOSS</span>
+              <span class="val" id="hero-level-sl">--</span>
+            </div>
+          </div>
+          <div class="tp-container">
+            <div class="tp-row">
+              <span class="tp-name">TARGET 1</span>
+              <span class="tp-price" id="hero-level-tp1">--</span>
+              <span class="tp-rr">1:2.0 R:R</span>
+            </div>
+            <div class="tp-row">
+              <span class="tp-name">TARGET 2</span>
+              <span class="tp-price" id="hero-level-tp2">--</span>
+              <span class="tp-rr">Runner</span>
+            </div>
+          </div>
+          <div class="invalidation-alert" id="hero-invalidation-box">
+            <strong>⛔ Invalidation:</strong> <span id="hero-level-invalidation">Wait for clean structural formation.</span>
+          </div>
+
+          <!-- Options Suggestion -->
+          <div class="options-strike-box" id="hero-options-box">
+            <div class="sub-lbl text-cyan">INSTITUTIONAL OPTIONS PLAY</div>
+            <div class="strike-title" id="hero-option-strike">NIFTY ATM / 1-ITM</div>
+            <p class="strike-sub" id="hero-option-note">Recommended strike selection based on IV percentile and delta efficiency.</p>
+          </div>
+        </div>
+
+        <!-- Action Row -->
+        <div class="results-actions">
+          <button id="btn-draw-nifty-overlay" class="btn-action btn-overlay">
+            <span>🎨 Draw On TradingView</span>
+          </button>
+          <button id="btn-log-nifty-journal" class="btn-action btn-journal">
+            <span>📓 Log Paper Trade</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ================= TAB 2: DRIVERS & VIX ================= -->
+      <section id="tab-drivers" class="tab-panel">
+        <div class="panel-intro">
+          <h2>Nifty Institutional Drivers</h2>
+          <p>The 9 core forces governing Nifty 50 movement. Missing data is dynamically excluded.</p>
+        </div>
+
+        <!-- India VIX Dedicated Banner -->
+        <div class="card-section vix-banner-card">
+          <div class="section-title">
+            <span>India VIX (Inverse Correlation Check)</span>
+            <span class="vix-badge" id="vix-card-status">NORMAL</span>
+          </div>
+          <div class="vix-stats-grid">
+            <div class="vix-stat">
+              <span class="lbl">CURRENT LEVEL</span>
+              <span class="val" id="vix-val-level">13.65</span>
+            </div>
+            <div class="vix-stat">
+              <span class="lbl">DAILY CHANGE</span>
+              <span class="val text-emerald" id="vix-val-change">-1.8%</span>
+            </div>
+            <div class="vix-stat">
+              <span class="lbl">20-DAY SMA</span>
+              <span class="val" id="vix-val-sma">13.80</span>
+            </div>
+          </div>
+          <p class="vix-rationale" id="vix-card-rationale">
+            VIX falling while Nifty rises confirms healthy bull accumulation.
+          </p>
+        </div>
+
+        <!-- Complete Drivers Table -->
+        <div class="card-section">
+          <div class="section-title">Institutional Market Forces</div>
+          <div class="drivers-table" id="all-drivers-table">
+            <!-- Dynamically populated drivers -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= TAB 3: STRATEGIES ================= -->
+      <section id="tab-strategies" class="tab-panel">
+        <div class="panel-intro">
+          <h2>Configurable Nifty Setups</h2>
+          <p>Toggle and calibrate each institutional strategy. Only setups matching current regime can fire.</p>
+        </div>
+
+        <div class="strategies-list">
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>1. Opening Range Breakout (ORB)</strong>
+              <input type="checkbox" id="cfg-strat-orb" checked>
+            </div>
+            <p>15m ORH/ORL breakout with VIX and GIFT Nifty confirmation (Active 09:20 - 11:15).</p>
+          </div>
+
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>2. VWAP Trend Pullback / Reversion</strong>
+              <input type="checkbox" id="cfg-strat-vwap" checked>
+            </div>
+            <p>Trend days: Pullback to VWAP with rejection candle; Range days: Mean reversion.</p>
+          </div>
+
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>3. 9/21 EMA Trend Pullback</strong>
+              <input type="checkbox" id="cfg-strat-ema" checked>
+            </div>
+            <p>Momentum bounce in higher-timeframe trend alignment.</p>
+          </div>
+
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>4. S/R & Liquidity Sweep Reversal</strong>
+              <input type="checkbox" id="cfg-strat-sweep" checked>
+            </div>
+            <p>Stop hunt beyond Previous Day High/Low (PDH/PDL) or Max OI boundary.</p>
+          </div>
+
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>5. Breakout-Retest</strong>
+              <input type="checkbox" id="cfg-strat-retest" checked>
+            </div>
+            <p>Broken resistance turned support with volume expansion.</p>
+          </div>
+
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>6. Gap Fill / Gap-and-Go</strong>
+              <input type="checkbox" id="cfg-strat-gap" checked>
+            </div>
+            <p>Morning gap evaluation based on GIFT Nifty and first 15m candle.</p>
+          </div>
+
+          <div class="strategy-toggle-card">
+            <div class="toggle-header">
+              <strong>7. Expiry Day Special (Thursdays)</strong>
+              <input type="checkbox" id="cfg-strat-expiry" checked>
+            </div>
+            <p>Max Pain magnetic pull and 14:00 gamma burst setup (Reduced lot size).</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= TAB 4: JOURNAL & BACKTEST ================= -->
+      <section id="tab-journal" class="tab-panel">
+        <div class="panel-intro">
+          <h2>Journal & Empirical Backtest</h2>
+          <p>Verify win rate and expectancy before risking real money. Paper trading by default.</p>
+        </div>
+
+        <!-- Performance Stats -->
+        <div class="journal-stats-grid">
+          <div class="jstat-box">
+            <span class="jstat-val" id="dash-winrate">0%</span>
+            <span class="jstat-lbl">WIN RATE</span>
+          </div>
+          <div class="jstat-box">
+            <span class="jstat-val text-cyan" id="dash-net-r">0.0 R</span>
+            <span class="jstat-lbl">NET R-MULTIPLE</span>
+          </div>
+          <div class="jstat-box">
+            <span class="jstat-val text-crimson" id="dash-max-dd">0.0 R</span>
+            <span class="jstat-lbl">MAX DRAWDOWN</span>
+          </div>
+        </div>
+
+        <!-- Backtest Trigger Button -->
+        <div class="card-section">
+          <div class="section-title">Historical Backtest Simulator</div>
+          <p style="font-size:11.5px; color:#94A3B8; margin-bottom:8px;">
+            Replays the 7 Nifty strategies across recent visible chart candles to test rule integrity.
+          </p>
+          <button id="btn-run-backtest" class="btn-secondary">Run Historical Candle Backtest</button>
+          <div id="backtest-results-box" class="backtest-results hidden"></div>
+        </div>
+
+        <!-- Trade Log Table -->
+        <div class="card-section">
+          <div class="section-title">
+            <span>Verified Trade Journal</span>
+            <button id="btn-clear-nifty-journal" class="btn-sm btn-danger">Clear</button>
+          </div>
+          <div id="journal-trades-list" class="journal-entries-list">
+            <div class="empty-state">No trades logged yet. Click "Log Paper Trade" after generating a signal.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= TAB 5: CONFIG ================= -->
+      <section id="tab-settings" class="tab-panel">
+        <div class="panel-intro">
+          <h2>Institutional Engine Config</h2>
+          <p>Risk limits, lot sizing, and Gemini AI key for institutional commentary.</p>
+        </div>
+
+        <div class="settings-form">
+          <div class="form-row">
+            <label for="cfg-lot-size">Nifty Lot Size</label>
+            <input type="number" id="cfg-lot-size" value="25" step="25">
+            <span class="field-hint">NSE standard Nifty lot size (e.g. 25 or 75).</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-risk-pct">Max Capital Risk per Trade (%)</label>
+            <input type="number" id="cfg-risk-pct" value="1.5" step="0.1" min="0.5" max="3.0">
+            <span class="field-hint">30-Year Rule: Never exceed 1.5% capital risk on index options.</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-api-key">Gemini API Key (AI Commentary)</label>
+            <div class="input-with-button">
+              <input type="password" id="cfg-api-key" placeholder="AIzaSy...">
+              <button id="btn-toggle-key-visibility" class="btn-icon-sm">👁️</button>
+            </div>
+            <span class="field-hint">Rule engine generates all signals locally; AI provides order-flow commentary.</span>
+          </div>
+
+          <div class="form-row">
+            <button id="btn-test-key" class="btn-secondary">Test Gemini Key</button>
+            <span id="test-key-status" class="test-status"></span>
+          </div>
+
+          <button id="btn-save-settings" class="btn-scan-primary">Save Institutional Settings</button>
+          <div id="save-status-msg" class="save-status-msg hidden"></div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Institutional Disclaimer Footer -->
+    <footer class="app-footer">
+      <div class="disclaimer-text">
+        <strong>⚖️ Non-Financial Advice:</strong> TradeSight NIFTY 50 is a quantitative decision-support tool. Trading index derivatives involves substantial risk of capital loss. Always practice strict position sizing (1-1.5% max risk).
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
