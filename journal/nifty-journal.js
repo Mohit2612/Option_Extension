@@ -62,6 +62,38 @@ export const NiftyJournalEngine = {
   },
 
   /**
+   * Log an intentional discipline rule override event in the journal
+   */
+  async logRuleOverride(reason = 'Trader manual override', prevLockType = 'DISCIPLINE_LOCK') {
+    const trades = await this.getTrades();
+    const overrideEntry = {
+      id: 'override_' + Date.now(),
+      timestamp: new Date().toISOString(),
+      timeOfDay: this.getTimeOfDayBucket(new Date()),
+      symbol: 'DISCIPLINE',
+      timeframe: 'RULE_LOG',
+      strategyName: `RULE OVERRIDE: ${prevLockType}`,
+      signal: 'OVERRIDE',
+      pattern: 'Psychological Rule Breach',
+      pressureScore: 0,
+      vixLevel: 'N/A',
+      entryPrice: 0,
+      stopLoss: 0,
+      target1: 0,
+      riskPoints: 0,
+      riskReward: 0,
+      status: 'RULE_OVERRIDE',
+      exitPrice: null,
+      realizedR: 0,
+      notes: `Trader typed override confirmation phrase. Stated reason: ${reason}`
+    };
+
+    trades.unshift(overrideEntry);
+    await chrome.storage.local.set({ [this.STORAGE_KEY]: trades });
+    return overrideEntry;
+  },
+
+  /**
    * Update trade status
    */
   async updateTrade(id, status, exitPrice = null) {

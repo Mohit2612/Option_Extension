@@ -90,6 +90,101 @@
           </div>
         </div>
 
+        <!-- Discipline and Loss-Protection Layer -->
+        <div class="card-section discipline-protection-card" id="discipline-protection-card" style="border:1.5px solid rgba(0, 212, 255, 0.35); background:linear-gradient(180deg, rgba(11,15,25,0.95) 0%, rgba(15,23,42,0.95) 100%); border-radius:10px; padding:10px 12px; margin-bottom:12px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+          
+          <!-- Row 1: Session Bar & Profile Selector -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:11px; font-weight:800; color:#00D4FF;">SESSION:</span>
+              <select id="sel-session-profile" style="background:#0B0F19; color:#E2E8F0; border:1px solid #334155; border-radius:4px; font-size:10.5px; padding:2px 6px; font-weight:700;">
+                <option value="MORNING_AFTERNOON" selected>⚡ Morning + Afternoon</option>
+                <option value="MORNING_ONLY">🌅 Morning Only (Stop 11:30)</option>
+                <option value="CUSTOM">⚙️ Custom Schedule</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span id="session-countdown-pill" style="font-size:10px; font-weight:700; color:#00D4FF; background:rgba(0,212,255,0.12); border:1px solid rgba(0,212,255,0.3); padding:2px 6px; border-radius:4px;">⏳ 00m 00s</span>
+            </div>
+          </div>
+
+          <!-- Session Window Status Pill -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span id="active-session-pill" style="font-size:10.5px; font-weight:800; padding:3px 8px; border-radius:5px; background:rgba(0,230,118,0.15); color:#00E676; border:1px solid #00E676;">
+              🟢 Session 1: Prime Morning Window
+            </span>
+            <span id="discipline-state-badge" style="font-size:10.5px; font-weight:800; padding:3px 8px; border-radius:5px; background:rgba(0,212,255,0.15); color:#00D4FF; border:1px solid #00D4FF;">
+              READY
+            </span>
+          </div>
+
+          <!-- Daily Goals & Limits Tracker -->
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:5px; margin-bottom:8px; text-align:center;">
+            <div style="background:rgba(255,255,255,0.03); padding:4px 2px; border-radius:4px;">
+              <span style="display:block; font-size:9px; color:#94A3B8;">REALIZED R</span>
+              <span id="disp-realized-r" style="font-size:11px; font-weight:800; color:#00E676;">+0.00 R</span>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:4px 2px; border-radius:4px;">
+              <span style="display:block; font-size:9px; color:#94A3B8;">DAILY GOAL</span>
+              <span id="disp-goal-r" style="font-size:11px; font-weight:800; color:#FBBF24;">+2.0 R</span>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:4px 2px; border-radius:4px;">
+              <span style="display:block; font-size:9px; color:#94A3B8;">TRADES</span>
+              <span id="disp-trades-count" style="font-size:11px; font-weight:800; color:#00D4FF;">0 / 3</span>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:4px 2px; border-radius:4px;">
+              <span style="display:block; font-size:9px; color:#94A3B8;">MAX LOSS</span>
+              <span id="disp-max-loss-r" style="font-size:11px; font-weight:800; color:#FF3B69;">-2.0 R</span>
+            </div>
+          </div>
+
+          <!-- Profit Protection Banner (Conditional) -->
+          <div id="profit-protection-banner" style="display:none; font-size:10px; color:#00E676; background:rgba(0,230,118,0.1); border:1px solid rgba(0,230,118,0.3); padding:4px 8px; border-radius:4px; margin-bottom:6px;">
+            🛡️ <strong>Profit Protection Active:</strong> Position sizing cut by 50% to protect morning gains.
+          </div>
+
+          <!-- Active Session Rules -->
+          <div id="session-rules-box" style="font-size:10px; color:#CBD5E1; background:rgba(255,255,255,0.02); padding:5px 8px; border-radius:4px; border-left:2px solid #00D4FF;">
+            <div style="font-weight:700; color:#00D4FF; margin-bottom:2px;">SESSION RULES:</div>
+            <div id="session-rules-text">09:20 - 11:30 Prime Window • Full Position Sizing • Trade ORB & VWAP Breaks</div>
+          </div>
+
+          <!-- Locked Banner & Anti-Bypass Modal Trigger -->
+          <div id="discipline-locked-view" style="display:none; margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,59,105,0.3);">
+            <div style="font-size:11px; font-weight:800; color:#FF3B69; margin-bottom:4px;" id="disp-lock-title">
+              🛑 TRADING LOCKED: Capital Preservation Rule Enforced
+            </div>
+            <p style="font-size:10px; color:#94A3B8; margin:0 0 6px 0;" id="disp-lock-desc">
+              Daily target reached or loss limit hit. Stop trading for the day.
+            </p>
+            <div style="display:flex; gap:6px;">
+              <button id="btn-show-override-modal" class="btn-sm" style="flex:1; background:#1E293B; border:1px solid #475569; color:#CBD5E1; padding:4px; border-radius:4px; font-size:10px;">
+                ⚠️ Request Intentional Override
+              </button>
+            </div>
+          </div>
+
+          <!-- Anti-Bypass Confirmation Modal / Drawer -->
+          <div id="anti-bypass-drawer" style="display:none; margin-top:8px; background:rgba(255,59,105,0.08); border:1px solid rgba(255,59,105,0.35); border-radius:6px; padding:8px;">
+            <div style="font-size:10.5px; font-weight:700; color:#FF3B69; margin-bottom:4px;">
+              ⚠️ ANTI-BYPASS OVERRIDE CONFIRMATION
+            </div>
+            <p style="font-size:9.5px; color:#CBD5E1; line-height:1.4; margin:0 0 6px 0;">
+              Overriding discipline rules is the #1 cause of retail drawdowns. To proceed, type the exact confirmation phrase below. This will be permanently logged to your journal as a <strong>RULE_OVERRIDE</strong> event.
+            </p>
+            <div style="font-size:9px; color:#FBBF24; font-family:monospace; background:rgba(0,0,0,0.4); padding:4px 6px; border-radius:4px; margin-bottom:6px;">
+              I ACCEPT THE RISK AND LOG THIS OVERRIDE
+            </div>
+            <input type="text" id="input-override-phrase" placeholder="Type confirmation phrase here..." style="width:100%; background:#0B0F19; color:#FFFFFF; border:1px solid #475569; border-radius:4px; padding:4px 6px; font-size:10px; margin-bottom:6px;">
+            <div style="display:flex; gap:6px;">
+              <button id="btn-confirm-override" class="btn-sm btn-danger" style="flex:1; font-size:10px;">Unlock & Log Override</button>
+              <button id="btn-cancel-override" class="btn-sm" style="background:#1E293B; color:#94A3B8; font-size:10px;">Cancel</button>
+            </div>
+            <div id="override-error-msg" style="font-size:9.5px; color:#FF3B69; margin-top:4px; display:none;"></div>
+          </div>
+
+        </div>
+
         <!-- Scan Button Container -->
         <div class="scan-action-box">
           <button id="btn-scan-nifty" class="btn-scan-primary">
@@ -593,6 +688,26 @@
             <label for="cfg-max-daily-loss">Max Daily Loss Limit (₹)</label>
             <input type="number" id="cfg-max-daily-loss" value="3000" step="500">
             <span class="field-hint">Trading stops automatically for the day if this loss limit is breached.</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-daily-profit-target-r">Daily Profit Target (R-Multiples)</label>
+            <input type="number" id="cfg-daily-profit-target-r" value="2.0" step="0.5" min="1.0" max="5.0">
+            <span class="field-hint">State machine locks trading once this R-target is reached (+2.0R default).</span>
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-daily-max-loss-r">Daily Max Loss (R-Multiples)</label>
+            <input type="number" id="cfg-daily-max-loss-r" value="2.0" step="0.5" min="1.0" max="4.0">
+            <span class="field-hint">Hard stop triggered if cumulative losses hit this R-multiple (-2.0R default).</span>
+          </div>
+
+          <div class="form-row" style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+              <label for="cfg-profit-protection-mode" style="margin-bottom:2px;">Profit Protection Mode</label>
+              <span class="field-hint" style="display:block;">Cut position size by 50% after +1R; lock completely upon daily target.</span>
+            </div>
+            <input type="checkbox" id="cfg-profit-protection-mode" checked style="width:20px; height:20px;">
           </div>
 
           <div class="form-row">

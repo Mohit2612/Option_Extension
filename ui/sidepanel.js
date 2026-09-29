@@ -13,6 +13,8 @@ import { RiskManager } from '../services/riskManager.js';
 import { SupportResistanceEngine } from '../services/supportResistanceEngine.js';
 import { BacktestEngine } from '../services/backtestEngine.js';
 import { AlertService } from '../services/alertService.js';
+import { SessionManager } from '../services/sessionManager.js';
+import { DisciplineStateMachine } from '../services/disciplineStateMachine.js';
 import { NIFTY_CONFIG } from '../config/nifty-config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -42,6 +44,7 @@ async function initApp() {
   initRiskLockControls();
   initAudioAlertControls();
   initAutoDetectListener();
+  await initSessionAndDisciplineLayer();
   initSettingsForm();
 
   // Probe TradingView chart
@@ -69,7 +72,11 @@ async function loadUserConfig() {
         heroMaxPremium: res.ts_hero_max_premium || 40,
         heroRiskPct: res.ts_hero_risk_pct || 0.75,
         orbSlMode: res.ts_orb_sl_mode || 'midpoint',
-        afternoonCompPts: res.ts_afternoon_comp_pts || 35
+        afternoonCompPts: res.ts_afternoon_comp_pts || 35,
+        dailyProfitTargetR: res.ts_daily_profit_target_r || 2.0,
+        dailyMaxLossR: res.ts_daily_max_loss_r || 2.0,
+        profitProtectionMode: res.ts_profit_protection_mode !== false,
+        sessionProfile: res.ts_session_profile || 'MORNING_AFTERNOON'
       };
       resolve(appConfig);
     });
@@ -251,13 +258,31 @@ async function runNiftyScan() {
       };
     }
 
+    // PASS SIGNAL THROUGH DISCIPLINE & LOSS-PROTECTION LAYER
+    // Intercept raw signal and enforce session timing, daily state machine, and profit protection
+    const now = new Date();
+    const isExpiryDay = ExpiryCalendar.isExpiryDay(now);
+    const sessionInfo = SessionManager.evaluateSession(now, {
+      activeProfile: appConfig.sessionProfile || 'MORNING_AFTERNOON',
+      allowMiddayHighGradeBreakouts: false
+    }, isExpiryDay);
+
+    const dailyDisciplineState = await DisciplineStateMachine.getState();
+
+    finalSignal = DisciplineStateMachine.evaluateDisciplineGuard({
+      rawSignal: finalSignal,
+      sessionInfo,
+      chartMeta: currentChartMeta,
+      dailyState: dailyDisciplineState
+    });
+
     latestSignal = finalSignal;
 
-    // Audible & Desktop Alerts on Actionable Confirmations
-    if (latestSignal.confirmed && latestSignal.signal === 'BUY') {
+    // Audible & Desktop Alerts on Actionable Confirmations ONLY IF Discipline Layer permits action
+    if (latestSignal.isActionable && latestSignal.confirmed && latestSignal.signal === 'BUY') {
       AlertService.playBuyChime();
       AlertService.sendNotification('CONFIRMED BUY', `${latestSignal.patternName || 'Pattern'} at 1-Month Support! Target: ${latestSignal.levels?.target1}`);
-    } else if (latestSignal.confirmed && latestSignal.signal === 'SELL') {
+    } else if (latestSignal.isActionable && latestSignal.confirmed && latestSignal.signal === 'SELL') {
       AlertService.playSellChime();
       AlertService.sendNotification('CONFIRMED SELL', `${latestSignal.patternName || 'Pattern'} at 1-Month Resistance! Target: ${latestSignal.levels?.target1}`);
     }
@@ -320,16 +345,35 @@ function renderNextMoveHero(signalData, driverData, pattern, srData = null, srCo
   const rationaleEl = document.getElementById('hero-rationale');
 
   const signal = signalData.signal || 'WAIT';
-  signalBadge.textContent = signal;
   signalBadge.className = 'hero-signal-badge';
-  if (signal === 'BUY') signalBadge.classList.add('hud-signal-buy');
-  else if (signal === 'SELL') signalBadge.classList.add('hud-signal-sell');
-  else signalBadge.classList.add('hud-signal-wait');
+
+  if (signalData.disciplineStatus?.isLocked) {
+    signalBadge.textContent = '🔒 LOCKED';
+    signalBadge.style.background = 'rgba(255, 59, 105, 0.2)';
+    signalBadge.style.color = '#FF3B69';
+    signalBadge.style.borderColor = '#FF3B69';
+  } else if (signalData.isInfoOnly || signalData.action?.includes('INFO ONLY')) {
+    signalBadge.textContent = '⏳ INFO ONLY';
+    signalBadge.style.background = 'rgba(251, 191, 36, 0.2)';
+    signalBadge.style.color = '#FBBF24';
+    signalBadge.style.borderColor = '#FBBF24';
+  } else {
+    signalBadge.textContent = signal;
+    signalBadge.removeAttribute('style');
+    if (signal === 'BUY') signalBadge.classList.add('hud-signal-buy');
+    else if (signal === 'SELL') signalBadge.classList.add('hud-signal-sell');
+    else signalBadge.classList.add('hud-signal-wait');
+  }
 
   stratEl.textContent = signalData.strategyName || 'Rule Engine Active';
   confEl.textContent = `${signalData.confidence || 0}% Conviction`;
   regimeEl.textContent = `Regime: ${signalData.regime?.label || 'Neutral'}`;
-  rationaleEl.textContent = signalData.setupRationale || signalData.filterReason || 'Standing by for high-probability structural confluence.';
+
+  let rationale = signalData.setupRationale || signalData.filterReason || 'Standing by for high-probability structural confluence.';
+  if (signalData.profitProtectionNote) {
+    rationale = `${signalData.profitProtectionNote}\n\n${rationale}`;
+  }
+  rationaleEl.textContent = rationale;
 
   // 1-Month S/R Card fields
   if (srData) {
@@ -638,15 +682,20 @@ function renderBacktestLedger(tradeLedger) {
   });
 }
 
-/* ================= INSTITUTIONAL RISK LOCK CONTROLS ================= */
+/* ================= INSTITUTIONAL RISK LOCK & DISCIPLINE CONTROLS ================= */
+let sessionTickerInterval = null;
+
 function initRiskLockControls() {
   const engageBtn = document.getElementById('btn-engage-risk-lock');
   const resetBtn = document.getElementById('btn-reset-risk-lock');
   const badge = document.getElementById('risk-lock-status-badge');
   const msg = document.getElementById('risk-lock-message');
 
-  engageBtn?.addEventListener('click', () => {
+  engageBtn?.addEventListener('click', async () => {
     isRiskLocked = true;
+    await DisciplineStateMachine.engageEmergencyLock('Trader self-imposed emergency lock.');
+    await updateDisciplineAndSessionDisplay();
+
     if (badge) {
       badge.textContent = '🔒 LOCKED OUT (Stand Aside)';
       badge.style.background = 'rgba(255,59,105,0.2)';
@@ -661,18 +710,194 @@ function initRiskLockControls() {
   });
 
   resetBtn?.addEventListener('click', () => {
-    isRiskLocked = false;
-    dailyLossCount = 0;
-    if (badge) {
-      badge.textContent = 'ACTIVE (UNLOCKED)';
-      badge.style.background = 'rgba(0,230,118,0.15)';
-      badge.style.color = '#00E676';
-      badge.style.borderColor = '#00E676';
-    }
-    if (msg) {
-      msg.textContent = 'Enforces strict capital protection: 2 consecutive losses or -3% daily loss triggers automatic trading lockout until 09:15 IST next session.';
+    const overrideDrawer = document.getElementById('anti-bypass-drawer');
+    const overrideInput = document.getElementById('input-override-phrase');
+    if (overrideDrawer) {
+      overrideDrawer.style.display = 'block';
+      if (overrideInput) {
+        overrideInput.value = '';
+        overrideInput.focus();
+      }
     }
   });
+}
+
+async function initSessionAndDisciplineLayer() {
+  const profileSelect = document.getElementById('session-profile-select');
+  const showOverrideBtn = document.getElementById('btn-show-override-modal');
+  const cancelOverrideBtn = document.getElementById('btn-cancel-override');
+  const confirmOverrideBtn = document.getElementById('btn-confirm-override');
+  const overrideDrawer = document.getElementById('anti-bypass-drawer');
+  const overrideInput = document.getElementById('input-override-phrase');
+  const overrideError = document.getElementById('override-error-msg');
+
+  if (profileSelect) {
+    profileSelect.value = appConfig.sessionProfile || 'MORNING_AFTERNOON';
+    profileSelect.addEventListener('change', async (e) => {
+      appConfig.sessionProfile = e.target.value;
+      await chrome.storage.local.set({ ts_session_profile: e.target.value });
+      updateDisciplineAndSessionDisplay();
+    });
+  }
+
+  showOverrideBtn?.addEventListener('click', () => {
+    if (overrideDrawer) {
+      overrideDrawer.style.display = 'block';
+      if (overrideInput) {
+        overrideInput.value = '';
+        overrideInput.focus();
+      }
+      if (overrideError) overrideError.style.display = 'none';
+    }
+  });
+
+  cancelOverrideBtn?.addEventListener('click', () => {
+    if (overrideDrawer) overrideDrawer.style.display = 'none';
+  });
+
+  confirmOverrideBtn?.addEventListener('click', async () => {
+    const phrase = overrideInput?.value || '';
+    const res = await DisciplineStateMachine.overrideLock(phrase, 'Trader manual override from sidepanel drawer');
+    if (!res.success) {
+      if (overrideError) {
+        overrideError.textContent = res.error;
+        overrideError.style.display = 'block';
+      }
+      return;
+    }
+
+    if (overrideDrawer) overrideDrawer.style.display = 'none';
+    if (overrideError) overrideError.style.display = 'none';
+    isRiskLocked = false;
+    await updateDisciplineAndSessionDisplay();
+    refreshJournalDashboard();
+    AlertService.sendNotification('DISCIPLINE OVERRIDE LOGGED', 'Lock removed. Behavioral warning logged to journal.');
+  });
+
+  // 1-second live countdown ticker
+  if (sessionTickerInterval) clearInterval(sessionTickerInterval);
+  sessionTickerInterval = setInterval(() => {
+    updateDisciplineAndSessionDisplay();
+  }, 1000);
+
+  await updateDisciplineAndSessionDisplay();
+}
+
+async function updateDisciplineAndSessionDisplay() {
+  const now = new Date();
+  const isExp = ExpiryCalendar.isExpiryDay(now);
+  const sessionInfo = SessionManager.evaluateSession(now, {
+    activeProfile: appConfig.sessionProfile || 'MORNING_AFTERNOON'
+  }, isExp);
+
+  const state = await DisciplineStateMachine.getState();
+  isRiskLocked = state.isLocked;
+
+  // 1. Session Countdown & Active Pill
+  const countPill = document.getElementById('session-countdown-pill');
+  const activePill = document.getElementById('active-session-pill');
+  if (countPill) {
+    countPill.textContent = SessionManager.formatCountdown(sessionInfo.timeRemainingSec);
+  }
+  if (activePill) {
+    if (sessionInfo.isAllowed) {
+      activePill.textContent = `🟢 ${sessionInfo.sessionName}`;
+      activePill.style.background = 'rgba(0,230,118,0.15)';
+      activePill.style.color = '#00E676';
+      activePill.style.borderColor = '#00E676';
+    } else {
+      activePill.textContent = `⏳ ${sessionInfo.sessionName} (NO-TRADE)`;
+      activePill.style.background = 'rgba(251,191,36,0.15)';
+      activePill.style.color = '#FBBF24';
+      activePill.style.borderColor = '#FBBF24';
+    }
+  }
+
+  // 2. Discipline State Badge
+  const stateBadge = document.getElementById('discipline-state-badge');
+  if (stateBadge) {
+    stateBadge.textContent = state.state;
+    if (state.isLocked) {
+      stateBadge.style.background = 'rgba(255,59,105,0.2)';
+      stateBadge.style.color = '#FF3B69';
+      stateBadge.style.borderColor = '#FF3B69';
+    } else if (state.state === 'ACTIVE') {
+      stateBadge.style.background = 'rgba(0,230,118,0.15)';
+      stateBadge.style.color = '#00E676';
+      stateBadge.style.borderColor = '#00E676';
+    } else {
+      stateBadge.style.background = 'rgba(0,212,255,0.15)';
+      stateBadge.style.color = '#00D4FF';
+      stateBadge.style.borderColor = '#00D4FF';
+    }
+  }
+
+  // 3. Daily Goals & Metrics Tracker
+  const realizedEl = document.getElementById('disp-realized-r');
+  const goalEl = document.getElementById('disp-goal-r');
+  const tradesEl = document.getElementById('disp-trades-count');
+  const maxLossEl = document.getElementById('disp-max-loss-r');
+
+  if (realizedEl) {
+    const r = state.realizedR || 0;
+    realizedEl.textContent = `${r >= 0 ? '+' : ''}${r.toFixed(2)} R`;
+    realizedEl.style.color = r > 0 ? '#00E676' : r < 0 ? '#FF3B69' : '#CBD5E1';
+  }
+  if (goalEl) {
+    goalEl.textContent = `+${state.limits?.dailyProfitTargetR || 2.0} R`;
+  }
+  if (tradesEl) {
+    tradesEl.textContent = `${state.tradesCount || 0} / ${state.limits?.maxDailyTrades || 3}`;
+  }
+  if (maxLossEl) {
+    maxLossEl.textContent = `-${state.limits?.dailyMaxLossR || 2.0} R`;
+  }
+
+  // 4. Profit Protection Banner
+  const protBanner = document.getElementById('profit-protection-banner');
+  if (protBanner) {
+    if (state.limits?.profitProtectionMode && state.realizedR >= 1.0 && !state.isLocked) {
+      protBanner.style.display = 'block';
+    } else {
+      protBanner.style.display = 'none';
+    }
+  }
+
+  // 5. Session Rules Text Box
+  const rulesEl = document.getElementById('session-rules-text');
+  if (rulesEl && sessionInfo.rules) {
+    rulesEl.textContent = sessionInfo.rules.join(' • ');
+  }
+
+  // 6. Locked View
+  const lockedView = document.getElementById('discipline-locked-view');
+  const lockTitle = document.getElementById('disp-lock-title');
+  const lockDesc = document.getElementById('disp-lock-desc');
+  const scanBtn = document.getElementById('btn-scan-nifty');
+
+  if (lockedView) {
+    if (state.isLocked) {
+      lockedView.style.display = 'block';
+      if (lockTitle) lockTitle.textContent = `🛑 TRADING LOCKED: ${state.lockType || 'RULE_LOCK'}`;
+      if (lockDesc) lockDesc.textContent = state.lockReason || 'Capital protection rule triggered. Trading halted.';
+      if (scanBtn) {
+        scanBtn.disabled = true;
+        scanBtn.style.opacity = '0.5';
+        scanBtn.title = 'Trading is locked under discipline rules';
+      }
+    } else {
+      lockedView.style.display = 'none';
+      if (scanBtn) {
+        scanBtn.disabled = false;
+        scanBtn.style.opacity = '1';
+        scanBtn.title = 'Scan active chart';
+      }
+    }
+  }
+}
+
+function refreshJournalDashboard() {
+  runQuantitativeBacktest();
 }
 
 /* ================= AUDIBLE ALERTS CONTROLS ================= */
@@ -722,6 +947,10 @@ function initSettingsForm() {
   const heroRisk = document.getElementById('cfg-hero-risk-pct');
   const compPts = document.getElementById('cfg-afternoon-comp-pts');
 
+  const profitTargetInput = document.getElementById('cfg-daily-profit-target-r');
+  const maxLossRInput = document.getElementById('cfg-daily-max-loss-r');
+  const profitProtCheckbox = document.getElementById('cfg-profit-protection-mode');
+
   const saveBtn = document.getElementById('btn-save-settings');
   const toggleKey = document.getElementById('btn-toggle-key-visibility');
 
@@ -737,11 +966,15 @@ function initSettingsForm() {
   if (heroRisk) heroRisk.value = appConfig.heroRiskPct || 0.75;
   if (compPts) compPts.value = appConfig.afternoonCompPts || 35;
 
+  if (profitTargetInput) profitTargetInput.value = appConfig.dailyProfitTargetR || 2.0;
+  if (maxLossRInput) maxLossRInput.value = appConfig.dailyMaxLossR || 2.0;
+  if (profitProtCheckbox) profitProtCheckbox.checked = appConfig.profitProtectionMode !== false;
+
   toggleKey?.addEventListener('click', () => {
     keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
   });
 
-  saveBtn?.addEventListener('click', () => {
+  saveBtn?.addEventListener('click', async () => {
     const updated = {
       ts_nifty_lot_size: parseInt(lotInput.value, 10) || 25,
       ts_nifty_risk_pct: parseFloat(riskInput.value) || 1.0,
@@ -752,11 +985,26 @@ function initSettingsForm() {
       ts_hero_max_premium: parseFloat(heroMax?.value) || 40,
       ts_hero_risk_pct: parseFloat(heroRisk?.value) || 0.75,
       ts_afternoon_comp_pts: parseFloat(compPts?.value) || 35,
+      ts_daily_profit_target_r: parseFloat(profitTargetInput?.value) || 2.0,
+      ts_daily_max_loss_r: parseFloat(maxLossRInput?.value) || 2.0,
+      ts_profit_protection_mode: profitProtCheckbox ? profitProtCheckbox.checked : true,
       ts_gemini_api_key: keyInput.value.trim()
     };
 
     chrome.storage.local.set(updated);
     Object.assign(appConfig, updated);
+
+    // Sync updated limits to Discipline State Machine
+    try {
+      const state = await DisciplineStateMachine.getState();
+      state.limits.dailyProfitTargetR = updated.ts_daily_profit_target_r;
+      state.limits.dailyMaxLossR = updated.ts_daily_max_loss_r;
+      state.limits.profitProtectionMode = updated.ts_profit_protection_mode;
+      await DisciplineStateMachine.saveState(state);
+      await updateDisciplineAndSessionDisplay();
+    } catch (e) {
+      // Quiet catch
+    }
 
     const status = document.getElementById('save-status-msg');
     status.textContent = '✓ Institutional settings saved successfully!';

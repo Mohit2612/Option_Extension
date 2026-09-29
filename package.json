@@ -4,6 +4,6 @@
   "description": "TradeSight AI - NIFTY 50 Institutional Engine with Hero-Zero, Opening Range, and 1:40 PM Modules",
   "type": "module",
   "scripts": {
-    "test": "node tests/pattern-engine.test.js && node tests/strategy-engine.test.js && node tests/time-strategies.test.js && node tests/support-resistance.test.js && node tests/backtest-and-risk.test.js"
+    "test": "node tests/pattern-engine.test.js && node tests/strategy-engine.test.js && node tests/time-strategies.test.js && node tests/support-resistance.test.js && node tests/backtest-and-risk.test.js && node tests/discipline-layer.test.js"
   }
 }
